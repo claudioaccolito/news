@@ -22,7 +22,6 @@
     {"id": "ansa", "name": "ANSA", "cat": "italia", "lang": "it", "def": true, "url": "https://www.ansa.it/sito/ansait_rss.xml"},
     {"id": "ilpost", "name": "Il Post", "cat": "italia", "lang": "it", "def": true, "url": "https://www.ilpost.it/feed/", "alt": ["https://www.ilpost.it/italia/feed/"]},
     {"id": "repubblica", "name": "la Repubblica", "cat": "italia", "lang": "it", "url": "https://www.repubblica.it/rss/homepage/rss2.0.xml"},
-    {"id": "corriere", "name": "Corriere della Sera", "cat": "italia", "lang": "it", "def": true, "url": "https://www.corriere.it/dynamic-feed/rss/section/homepage.xml", "alt": ["https://xml2.corriereobjects.it/rss/homepage.xml"]},
     {"id": "rainews", "name": "RaiNews", "cat": "italia", "lang": "it", "url": "https://www.rainews.it/rss/tutti"},
     {"id": "fattoq", "name": "Il Fatto Quotidiano", "cat": "italia", "lang": "it", "url": "https://www.ilfattoquotidiano.it/feed/"},
     {"id": "open", "name": "Open", "cat": "italia", "lang": "it", "url": "https://www.open.online/feed/"},
@@ -94,7 +93,6 @@
     {"id": "openai", "name": "OpenAI News", "cat": "ai", "lang": "en", "url": "https://openai.com/news/rss.xml"},
     {"id": "google-ai", "name": "Google AI Blog", "cat": "ai", "lang": "en", "url": "https://blog.google/technology/ai/rss/"},
     {"id": "deepmind", "name": "Google DeepMind", "cat": "ai", "lang": "en", "url": "https://deepmind.google/blog/rss.xml"},
-    {"id": "importai", "name": "Import AI", "cat": "ai", "lang": "en", "url": "https://importai.substack.com/feed"},
     {"id": "marktechpost", "name": "MarkTechPost", "cat": "ai", "lang": "en", "url": "https://www.marktechpost.com/feed/"},
     {"id": "theverge-ai", "name": "The Verge AI", "cat": "ai", "lang": "en", "url": "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"},
     {"id": "ai4business", "name": "AI4Business", "cat": "ai", "lang": "it", "url": "https://www.ai4business.it/feed/"},
@@ -157,7 +155,6 @@
     {"id": "ilpost-sport", "name": "Il Post Sport", "cat": "sport", "lang": "it", "url": "https://www.ilpost.it/sport/feed/"},
     {"id": "bbc-sport", "name": "BBC Sport", "cat": "sport", "lang": "en", "url": "https://feeds.bbci.co.uk/sport/rss.xml"},
     {"id": "guardian-football", "name": "The Guardian Football", "cat": "sport", "lang": "en", "url": "https://www.theguardian.com/football/rss"},
-    {"id": "espn", "name": "ESPN", "cat": "sport", "lang": "en", "url": "https://www.espn.com/espn/rss/news", "alt": ["https://www.espn.com/espn/rss/news/"]},
 
     {"id": "motorsport-it", "name": "Motorsport.com Italia", "cat": "motori", "lang": "it", "def": true, "url": "https://it.motorsport.com/rss/all/news/"},
     {"id": "motor1-it", "name": "Motor1 Italia", "cat": "motori", "lang": "it", "def": true, "url": "https://it.motor1.com/rss/news/all/"},
