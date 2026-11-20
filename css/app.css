@@ -1447,3 +1447,6 @@ kbd {
 .recap-out h3:not(:first-child) { padding-top: 1.1rem; border-top: 1px solid var(--line); }
 .recap-out li { margin: 0.45em 0; padding-left: 0.15em; }
 .recap .ai-note { margin-top: 1.25rem; }
+
+.ai-source { display: flex; gap: 0.4rem; align-items: flex-start; line-height: 1.45; }
+.ai-source .ic { margin-top: 0.1rem; flex: none; }

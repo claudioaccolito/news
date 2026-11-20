@@ -161,6 +161,41 @@ export async function fetchFeedText(url) {
 		: 'il sito non permette la lettura diretta dal browser (CORS)');
 }
 
+// Readable text of an article page: the block with the most paragraph text.
+function extractArticle(html) {
+	const doc = new DOMParser().parseFromString(html, 'text/html');
+	for (const n of doc.querySelectorAll('script, style, noscript, nav, header, footer, aside, form, figure, iframe, svg, button, [role="navigation"], [aria-hidden="true"]')) n.remove();
+	const pool = [...doc.querySelectorAll('article, [itemprop="articleBody"], main, .article-body, .entry-content, .post-content, .story-body, .article__body')];
+	let best = null, bestLen = 0;
+	for (const el of pool.length ? pool : [doc.body]) {
+		const len = [...el.querySelectorAll('p')].reduce((n, p) => n + p.textContent.trim().length, 0);
+		if (len > bestLen) { best = el; bestLen = len; }
+	}
+	if (!best) return '';
+	const text = [...best.querySelectorAll('p')]
+		.map((p) => p.textContent.replace(/\s+/g, ' ').trim())
+		.filter((t) => t.length > 40)
+		.join('\n\n');
+	return text.length > 500 ? text : '';
+}
+
+// Tries to read the whole article: directly (only works if the site allows it), then through
+// the reader's own proxy if one is set. Returns '' when the page cannot be read from here.
+async function fetchArticle(url) {
+	for (const u of [url, proxied(url)].filter(Boolean)) {
+		try {
+			const ctrl = new AbortController();
+			const timer = setTimeout(() => ctrl.abort(), 8000);
+			const res = await fetch(u, { signal: ctrl.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
+			clearTimeout(timer);
+			if (!res.ok || !/html/i.test(res.headers.get('content-type') || 'text/html')) continue;
+			const text = extractArticle(await res.text());
+			if (text) return text;
+		} catch {}
+	}
+	return '';
+}
+
 async function loadCustom() {
 	const selected = settings.custom.filter((c) => settings.sel.includes(c.id));
 	const cutoff = Date.now() - 72 * 3600e3;
@@ -496,20 +531,47 @@ function noticeHTML(n) {
 	</div>`;
 }
 
+// Phases of a summary: loading the model (exact %), reading (elapsed time), writing
+// (estimated % from the expected length, never 100 until it is really done).
+function progressUI(el, readingText, expectedWords) {
+	let phase = 'wait', t0 = 0, words = 0, timer = null;
+	const render = () => {
+		if (!el.isConnected) return clearInterval(timer);
+		if (phase === 'read') el.innerHTML = statusHTML(`${readingText} · ${Math.max(1, Math.round((Date.now() - t0) / 1000))} s`);
+		if (phase === 'write') {
+			const pct = Math.min(95, Math.max(3, Math.round((words / expectedWords) * 100)));
+			el.innerHTML = statusHTML(`Scrivo il riassunto… ${pct}%`, pct / 100);
+		}
+	};
+	return {
+		say(text) { if (phase === 'wait') el.innerHTML = statusHTML(text); },
+		loading(pr) {
+			if (phase !== 'wait') return;
+			if ((pr.progress || 0) >= 1) this.reading();
+			else el.innerHTML = statusHTML(progressText(pr), pr.progress || 0);
+		},
+		reading() {
+			if (phase !== 'wait') return;
+			phase = 'read';
+			t0 = Date.now();
+			render();
+			timer = setInterval(render, 1000);
+		},
+		writing(text) {
+			if (phase !== 'write') { phase = 'write'; clearInterval(timer); }
+			words = text.split(/\s+/).filter(Boolean).length;
+			render();
+		},
+		done() { clearInterval(timer); phase = 'done'; if (el.isConnected) el.innerHTML = ''; }
+	};
+}
+
 function statusHTML(text, progress) {
 	return `<div class="ai-status" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(text)}</span></div>${progress != null && progress < 1 ? `<progress max="1" value="${progress}"></progress>` : ''}`;
 }
 
 function aiHost() {
 	return settings.ai.base.replace(/^https?:\/\//, '').split('/')[0];
-}
-
-// Status line while waiting for the first words: loading → reading → writing.
-function waitingText(what) {
-	const ai = settings.ai;
-	if (ai.provider === 'webllm') return 'Preparo il modello…';
-	if (AI.isLocal(ai)) return `Il modello sul computer sta leggendo ${what}…`;
-	return `${aiHost()} sta leggendo ${what}…`;
 }
 
 // Summaries are only ever made on request: nothing runs when an article opens.
@@ -521,49 +583,48 @@ function setupTldr(item, src, text) {
 	if (!go || !box || !out) return;
 	const local = AI.isLocal(settings.ai);
 	const idle = `${icon('sparkle', 17)} Riassumi`;
+	let host = '';
+	try { host = new URL(item.u).hostname.replace(/^www\./, ''); } catch {}
 
-	const stopButton = () => {
-		go.innerHTML = `${icon('stop', 17)} Interrompi`;
-		go.classList.add('stop');
-	};
-	const resetButton = () => {
-		if (!go.isConnected) return;
-		go.innerHTML = idle;
-		go.classList.remove('stop');
+	const footer = (full) => `<p class="ai-source">${full
+		? `${icon('check', 14)} Riassunto dell'articolo completo, letto da ${esc(host || src.name)}.`
+		: `${icon('info', 14)} Riassunto dell'estratto: ${esc(host || src.name)} non permette di leggere l'articolo completo da qui.`}${local ? '' : ` Generato da ${esc(aiHost())}.`}</p>`;
+	const show = (cached) => {
+		const c = typeof cached === 'string' ? { t: cached, f: false } : cached;
+		out.innerHTML = AI.renderMarkdown(c.t) + footer(c.f);
 	};
 
 	const run = async () => {
 		state.aiCtrl?.abort();
 		const ctrl = state.aiCtrl = new AbortController();
 		out.innerHTML = '';
-		status.innerHTML = statusHTML(waitingText("l'articolo"));
-		stopButton();
-		let started = false;
+		go.innerHTML = `${icon('stop', 17)} Interrompi`;
+		go.classList.add('stop');
+		const ui = progressUI(status, settings.ai.provider === 'webllm' ? "Modello pronto: leggo l'articolo" : `${local ? 'Il modello' : aiHost()} legge l'articolo`, 70);
 		try {
-			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.tldrPrompt(item, src.name, settings.ai.provider === 'webllm' ? (text || '').slice(0, 6000) : text), (t) => {
-				if (!out.isConnected) return;
-				if (!started) { started = true; status.innerHTML = ''; }
-				out.innerHTML = AI.streamMarkdown(t);
-			}, ctrl.signal, (pr) => {
-				if (!status.isConnected || started) return;
-				status.innerHTML = (pr.progress || 0) >= 1 ? statusHTML("Modello pronto: leggo l'articolo…") : statusHTML(progressText(pr), pr.progress || 0);
-			}, WebLLM.TLDR_MAX_TOKENS);
-			if (res) tldrCache.set(item.id, res);
-			if (out.isConnected) {
-				status.innerHTML = '';
-				out.innerHTML = AI.renderMarkdown(res) + (local ? '' : `<p class="ai-source">Generato da ${esc(aiHost())}</p>`);
-			}
+			ui.say(`Leggo l'articolo da ${host || src.name}…`);
+			const full = await fetchArticle(item.u);
+			if (ctrl.signal.aborted) throw new DOMException('Annullato', 'AbortError');
+			const body = full || text || item.d || '';
+			if (settings.ai.provider === 'webllm') ui.say('Preparo il modello…'); else ui.reading();
+			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.tldrPrompt(item, src.name, settings.ai.provider === 'webllm' ? body.slice(0, 6000) : body), (t) => {
+				ui.writing(t);
+				if (out.isConnected) out.innerHTML = AI.streamMarkdown(t);
+			}, ctrl.signal, (pr) => ui.loading(pr), WebLLM.TLDR_MAX_TOKENS);
+			ui.done();
+			if (res) tldrCache.set(item.id, { t: res, f: !!full });
+			if (out.isConnected) show({ t: res, f: !!full });
 		} catch (e) {
+			ui.done();
 			if (!out.isConnected) return;
 			if (e.name === 'AbortError') {
-				status.innerHTML = '';
+				out.querySelector('.cursor')?.remove();
 				if (!out.textContent.trim()) box.hidden = true;
 			} else {
-				status.innerHTML = '';
 				out.innerHTML = `<p class="ai-err">${esc(e.message)}</p>`;
 			}
 		} finally {
-			resetButton();
+			if (go.isConnected) { go.innerHTML = idle; go.classList.remove('stop'); }
 		}
 	};
 
@@ -573,7 +634,7 @@ function setupTldr(item, src, text) {
 		const cached = tldrCache.get(item.id);
 		if (cached) {
 			status.innerHTML = '';
-			out.innerHTML = AI.renderMarkdown(cached);
+			show(cached);
 		} else {
 			status.innerHTML = statusHTML('Controllo il modello…');
 			out.innerHTML = '';
@@ -657,7 +718,8 @@ function renderRecap() {
 		go.classList.add('stop');
 		go.classList.remove('primary');
 		out.innerHTML = '';
-		status.innerHTML = statusHTML(waitingText(`${used.length} notizie`));
+		const ui = progressUI(status, settings.ai.provider === 'webllm' ? `Modello pronto: leggo ${used.length} notizie` : `${AI.isLocal(settings.ai) ? 'Il modello' : aiHost()} legge ${used.length} notizie`, device ? 220 : 320);
+		if (device) ui.say('Preparo il modello…'); else ui.reading();
 		const lines = used.map((it) => {
 			const s = state.sources.get(it.s);
 			return `- [${s?.name || it.s}] ${it.t}${it.d ? ' — ' + truncate(it.d, device ? WebLLM.RECAP_LIMIT.desc : 160) : ''}`;
@@ -665,18 +727,16 @@ function renderRecap() {
 		let started = false;
 		try {
 			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.recapPrompt(lines, label), (t) => {
-				if (!out.isConnected) return;
-				if (!started) { started = true; status.innerHTML = ''; }
-				out.innerHTML = AI.streamMarkdown(t);
-			}, ctrl.signal, (pr) => {
-				if (!status.isConnected || started) return;
-				status.innerHTML = (pr.progress || 0) >= 1 ? statusHTML(`Modello pronto: leggo ${used.length} notizie…`) : statusHTML(progressText(pr), pr.progress || 0);
-			}, device ? WebLLM.RECAP_LIMIT.maxTokens : undefined);
+				started = true;
+				ui.writing(t);
+				if (out.isConnected) out.innerHTML = AI.streamMarkdown(t);
+			}, ctrl.signal, (pr) => ui.loading(pr), device ? WebLLM.RECAP_LIMIT.maxTokens : undefined);
+			ui.done();
 			if (res) recapCache.set(key, res);
-			if (out.isConnected) { status.innerHTML = ''; out.innerHTML = AI.renderMarkdown(res); }
+			if (out.isConnected) out.innerHTML = AI.renderMarkdown(res);
 		} catch (e) {
+			ui.done();
 			if (!out.isConnected) return;
-			status.innerHTML = '';
 			if (e.name === 'AbortError') {
 				if (!started) out.innerHTML = previous;
 				else out.insertAdjacentHTML('beforeend', '<p class="ai-source">Interrotto.</p>');
@@ -942,6 +1002,7 @@ const ICON_PATHS = {
 	key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16.5 6.5l2.5 2.5M14 9l2 2"/>',
 	info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/>',
 	stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2.2"/>',
+	check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
 	share: '<path d="M12 15V4M8 7.5 12 3.8l4 3.7M6 11.5v7.2c0 .7.6 1.3 1.3 1.3h9.4c.7 0 1.3-.6 1.3-1.3v-7.2"/>',
 	external: '<path d="M14 4.5h5.5V10M19.3 4.7 11 13M17.5 14v4.2c0 .7-.6 1.3-1.3 1.3H5.8c-.7 0-1.3-.6-1.3-1.3V7.8c0-.7.6-1.3 1.3-1.3H10"/>',
 	back: '<path d="M19.5 12h-15M10.5 6l-6 6 6 6"/>',

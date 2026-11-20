@@ -123,6 +123,7 @@ export async function complete(id, system, user, onText, signal, onProgress, max
 	let stop = null;
 	try {
 		const eng = await load(id, onProgress);
+		onProgress?.({ progress: 1, text: 'ready' });
 		if (signal?.aborted) throw new DOMException('Annullato', 'AbortError');
 		stop = () => eng.interruptGenerate();
 		signal?.addEventListener('abort', stop, { once: true });
