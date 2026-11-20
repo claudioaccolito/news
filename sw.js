@@ -24,7 +24,11 @@ const SHELL_FILES = [
 ];
 
 self.addEventListener('install', (e) => {
-	e.waitUntil(caches.open(SHELL).then((c) => c.addAll(SHELL_FILES)).then(() => self.skipWaiting()));
+	// cache: 'reload' skips the browser's HTTP cache (GitHub Pages keeps files for 10 minutes),
+	// otherwise a new version could store the previous files.
+	e.waitUntil(caches.open(SHELL)
+		.then((c) => c.addAll(SHELL_FILES.map((u) => new Request(u, { cache: 'reload' }))))
+		.then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', (e) => {
@@ -69,14 +73,26 @@ self.addEventListener('fetch', (e) => {
 		return;
 	}
 
-	// App shell: cache first, refreshed in the background.
+	// Fonts and icons never change: cache first.
+	const stable = /\/(fonts|icons)\//.test(url.pathname);
+	// Pages, scripts and styles: always the latest version when online (a cheap revalidation),
+	// the saved copy when offline or when the network is too slow.
 	e.respondWith((async () => {
 		const cache = await caches.open(SHELL);
-		const cached = await cache.match(req, { ignoreSearch: true }) || (req.mode === 'navigate' ? await cache.match('index.html') : null);
-		const network = fetch(req).then((res) => {
+		const fallback = async () => (await cache.match(req, { ignoreSearch: true })) || (req.mode === 'navigate' ? await cache.match('index.html') : null);
+		if (stable) {
+			const hit = await fallback();
+			if (hit) return hit;
+		}
+		const network = fetch(req, { cache: 'no-cache' }).then((res) => {
 			if (res.ok && res.type === 'basic') cache.put(req, res.clone());
 			return res;
-		}).catch(() => null);
-		return cached || (await network) || Response.error();
+		});
+		const slow = new Promise((resolve) => setTimeout(resolve, 3500, null));
+		try {
+			const res = await Promise.race([network, slow]);
+			if (res) return res;
+		} catch {}
+		return (await fallback()) || network.catch(() => Response.error());
 	})());
 });
