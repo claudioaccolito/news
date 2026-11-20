@@ -18,7 +18,8 @@ const SHELL_FILES = [
 	'manifest.webmanifest',
 	'icons/icon.svg',
 	'icons/icon-192.png',
-	'fonts/inter.woff2'
+	'fonts/inter.woff2',
+	'fonts/literata.woff2'
 ];
 
 self.addEventListener('install', (e) => {

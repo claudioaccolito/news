@@ -96,7 +96,7 @@ function highlight(text, terms) {
 
 function applyLook() {
 	const root = document.documentElement;
-	root.dataset.style = settings.style || 'quotidiano';
+	root.dataset.style = settings.style || 'notte';
 	if (settings.theme === 'auto') delete root.dataset.theme;
 	else root.dataset.theme = settings.theme;
 	// Browser chrome follows the page background.
@@ -886,6 +886,7 @@ function renderSettings() {
 	for (const b of $$('[data-theme]')) {
 		b.addEventListener('click', () => {
 			settings.theme = b.dataset.theme;
+			settings.lookChosen = true;
 			save();
 			applyLook();
 			for (const o of $$('[data-theme]')) o.setAttribute('aria-pressed', o === b);
@@ -895,6 +896,7 @@ function renderSettings() {
 	for (const b of $$('[data-look]')) {
 		b.addEventListener('click', () => {
 			settings.style = b.dataset.look;
+			settings.lookChosen = true;
 			save();
 			applyLook();
 			for (const o of $$('[data-look]')) o.setAttribute('aria-pressed', o === b);

@@ -8,8 +8,9 @@ const DEFAULTS = {
 	onboarded: false,
 	sel: [],          // selected catalog source ids
 	custom: [],       // [{ id, name, url, cat }]
-	style: 'quotidiano', // 'quotidiano' | 'moderno' | 'notte'
-	theme: 'auto',
+	style: 'notte',      // 'quotidiano' | 'moderno' | 'notte'
+	theme: 'light',      // 'auto' | 'light' | 'dark'
+	lookChosen: false,   // true once the reader picks a style or theme
 	size: 'm',
 	proxy: '',        // optional CORS proxy prefix for custom feeds (off by default)
 	ai: {
@@ -43,7 +44,10 @@ function write(key, value) {
 
 export const settings = (() => {
 	const s = read(KEY, {});
-	return { ...DEFAULTS, ...s, ai: { ...DEFAULTS.ai, ...(s.ai || {}) } };
+	const out = { ...DEFAULTS, ...s, ai: { ...DEFAULTS.ai, ...(s.ai || {}) } };
+	// Until the reader picks a look, follow the current default (Notte, light).
+	if (!out.lookChosen) { out.style = DEFAULTS.style; out.theme = DEFAULTS.theme; }
+	return out;
 })();
 
 export function save() {
