@@ -771,88 +771,125 @@ function renderWelcome() {
 
 /* ---------- Settings ---------- */
 
+/* ---------- Icons ---------- */
+
+const ICON_PATHS = {
+	sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+	moon: '<path d="M19.5 14.5A7.5 7.5 0 0 1 9.5 4.5a7.5 7.5 0 1 0 10 10z"/>',
+	auto: '<circle cx="12" cy="12" r="8"/><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor" stroke="none"/>',
+	text: '<path d="M3.5 18 8 6l4.5 12M5.2 14h5.6M14 18l3.25-8L20.5 18M15.2 15.3h4.1"/>',
+	rss: '<path d="M5 11a8 8 0 0 1 8 8M5 5a14 14 0 0 1 14 14"/><circle cx="6" cy="18" r="1.4" fill="currentColor" stroke="none"/>',
+	refresh: '<path d="M19.5 10A7.8 7.8 0 0 0 5.2 7.6L4 9M4 4.5V9h4.5M4.5 14a7.8 7.8 0 0 0 14.3 2.4L20 15M20 19.5V15h-4.5"/>',
+	off: '<circle cx="12" cy="12" r="8"/><path d="M6.5 17.5l11-11"/>',
+	device: '<rect x="7" y="2.8" width="10" height="18.4" rx="2.6"/><path d="M10.8 18h2.4"/>',
+	laptop: '<rect x="4.5" y="5" width="15" height="10.5" rx="1.6"/><path d="M2.5 19h19"/>',
+	cloud: '<path d="M7.2 18.5h9.6a4.2 4.2 0 0 0 .6-8.36A6 6 0 0 0 6 10.6a3.95 3.95 0 0 0 1.2 7.9z"/>',
+	download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14"/>',
+	upload: '<path d="M12 15.5V4.5M7.5 9 12 4.5 16.5 9M5 20h14"/>',
+	globe: '<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 2.6 14.6 0 17M12 3.5c-2.6 2.4-2.6 14.6 0 17"/>',
+	trash: '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v5.5M14 11v5.5"/>',
+	shield: '<path d="M12 3 19 6v5.2c0 4.4-2.9 7.9-7 9.8-4.1-1.9-7-5.4-7-9.8V6z"/><path d="m9 12 2.2 2.2L15.2 10"/>',
+	chevron: '<path d="m9.5 6 6 6-6 6"/>',
+	sparkle: '<path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7-5.6-1.9L10.1 9z"/><path d="M18.5 3.5v3M17 5h3"/>',
+	key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16.5 6.5l2.5 2.5M14 9l2 2"/>',
+	info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/>'
+};
+
+const icon = (name, size = 20) => `<svg class="ic" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name]}</svg>`;
+
+/* ---------- Settings ---------- */
+
+const AI_MODES = {
+	off: { icon: 'off', name: 'Spenta', desc: 'Solo le notizie' },
+	device: { icon: 'device', name: 'Nel dispositivo', desc: 'Gira nel browser, anche offline', badge: ['ok', 'Privato'] },
+	computer: { icon: 'laptop', name: 'Sul mio computer', desc: 'Ollama, LM Studio, llama.cpp', badge: ['ok', 'Privato'] },
+	online: { icon: 'cloud', name: 'Servizio online', desc: 'OpenAI, Anthropic, OpenRouter…', badge: ['warn', 'Online'] }
+};
+const COMPUTER_APPS = [['ollama', 'Ollama'], ['lmstudio', 'LM Studio'], ['llamacpp', 'llama.cpp']];
+const ONLINE_SERVICES = [['openai', 'OpenAI'], ['anthropic', 'Anthropic'], ['openrouter', 'OpenRouter'], ['custom', 'Altro']];
+
+function aiMode(ai) {
+	if (ai.provider === 'none') return 'off';
+	if (ai.provider === 'webllm') return 'device';
+	return COMPUTER_APPS.some(([k]) => k === ai.preset) ? 'computer' : 'online';
+}
+
 function renderSettings() {
 	const ai = settings.ai;
-	const presetKey = ai.provider === 'none' ? '' : ai.preset || 'custom';
-	const preset = AI.PRESETS[presetKey];
 	const st = state.news?.status || {};
 	const okCount = Object.values(st).filter((v) => typeof v === 'number' && v > 0).length;
-	const seg = (name, cur, opts) => `<div class="seg" role="group">${opts.map(([v, l]) => `<button data-${name}="${v}" aria-pressed="${cur === v}">${l}</button>`).join('')}</div>`;
+	const customCount = settings.custom.length;
+	const seg = (name, cur, opts) => `<div class="seg" role="group">${opts.map(([v, l, a]) => `<button data-${name}="${v}" aria-pressed="${cur === v}"${a ? ` aria-label="${a}" title="${a}"` : ''}>${l}</button>`).join('')}</div>`;
+	const row = (ic, title, sub, right = '', attrs = '', tag = 'div') => `<${tag} class="set-row" ${attrs}><span class="set-ic">${icon(ic)}</span><span class="set-text"><span class="set-title">${title}</span>${sub ? `<span class="set-sub">${sub}</span>` : ''}</span>${right}</${tag}>`;
+	const chevron = `<span class="set-chev">${icon('chevron', 18)}</span>`;
 
 	view.innerHTML = `
-		<section class="page">
+		<section class="page settings">
 			<h1>Impostazioni</h1>
-			<p class="lede">Tutto resta su questo dispositivo.</p>
+			<p class="lede">${icon('shield', 16)} Niente account: tutto resta su questo dispositivo.</p>
 
-			<h2>Lettura</h2>
-			<div class="field"><span>Stile</span>
-				<div class="looks">
-					${[['quotidiano', 'Quotidiano', 'Carta, inchiostro e rosso. Newsreader.'], ['moderno', 'Moderno', 'Grigi, blu e schede. Inter.'], ['notte', 'Notte', 'Blu notte e ambra. Literata.']].map(([k, l, d]) => `<button class="look" data-look="${k}" aria-pressed="${settings.style === k}"><span class="look-swatch look-${k}" aria-hidden="true"><i></i><i></i><i></i></span><span class="look-name">${l}</span><span class="look-desc">${d}</span></button>`).join('')}
-				</div>
-			</div>
-			<div class="field"><span>Chiaro o scuro</span>${seg('theme', settings.theme, [['auto', 'Automatico'], ['light', 'Chiaro'], ['dark', 'Scuro']])}</div>
-			<div class="field"><span>Dimensione del testo</span>${seg('size', settings.size, [['s', 'Piccolo'], ['m', 'Normale'], ['l', 'Grande'], ['xl', 'Molto grande']])}</div>
-
-			<h2>Intelligenza artificiale (facoltativa)</h2>
-			<p class="help">Un modello può scrivere il riassunto delle notizie del giorno e un TL;DR in italiano per ogni articolo. Con un modello locale (Ollama, LM Studio, llama.cpp) nulla esce dal tuo computer; con un servizio esterno le notizie vengono inviate a quel servizio con la tua chiave.</p>
-			<label class="field"><span>Motore</span>
-				<select class="input" id="preset">
-					<option value="">Disattivata</option>
-					${Object.entries(AI.PRESETS).map(([k, p]) => `<option value="${k}" ${presetKey === k ? 'selected' : ''}>${esc(p.label)}</option>`).join('')}
-				</select>
-			</label>
-			<div id="ai-fields" ${presetKey ? '' : 'hidden'}>
-				<p class="help" id="ai-help">${preset?.help || ''}</p>
-				<div id="device-fields" ${ai.provider === 'webllm' ? '' : 'hidden'}>
-					<p class="status" id="gpu-status" role="status"></p>
-					<div class="field"><span>Modello</span>
-						${WebLLM.MODELS.map((m) => `<label class="row model-row"><input type="radio" name="wmodel" value="${m.id}" ${ai.model === m.id ? 'checked' : ''}><span class="grow">${esc(m.label)}<small>${m.size}</small><small class="ok" data-cached="${m.id}"></small><span class="sub">${esc(m.note)}</span></span></label>`).join('')}
+			<h2>Aspetto</h2>
+			<div class="card">
+				<div class="card-pad">
+					<div class="looks">
+						${[['quotidiano', 'Quotidiano', 'Carta e inchiostro'], ['moderno', 'Moderno', 'Grigi e blu'], ['notte', 'Notte', 'Blu notte e ambra']].map(([k, l, d]) => `<button class="look" data-look="${k}" aria-pressed="${settings.style === k}"><span class="look-sample look-${k}" aria-hidden="true"><b>Ag</b><i></i><i></i></span><span class="look-name">${l}</span><span class="look-desc">${d}</span></button>`).join('')}
 					</div>
-					<progress id="wprog" max="1" value="0" hidden></progress>
 				</div>
-				<div id="remote-fields" ${ai.provider === 'webllm' ? 'hidden' : ''}>
-				<label class="field"><span>Indirizzo</span><input class="input" id="base" value="${esc(ai.base)}" placeholder="http://localhost:11434/v1" inputmode="url" autocomplete="off"></label>
-				<label class="field"><span>Modello</span>
-					<div style="display:flex;gap:0.5rem"><input class="input" id="model" list="models" value="${esc(ai.model)}" placeholder="es. llama3.2" autocomplete="off"><button class="btn small" id="list" type="button">Elenca</button></div>
-					<datalist id="models"></datalist>
-				</label>
-				<label class="field" id="key-field" ${preset?.key ? '' : 'hidden'}><span>Chiave API</span><input class="input" id="key" type="password" value="${esc(ai.key)}" autocomplete="off" placeholder="Resta solo su questo dispositivo"></label>
-				</div>
-				<label class="row"><input type="checkbox" id="auto" ${ai.auto ? 'checked' : ''}><span class="grow">Crea il TL;DR appena apro un articolo</span></label>
-				<div id="max-field" ${ai.provider === 'webllm' ? 'hidden' : ''}>
-				<label class="field" style="margin-top:0.75rem"><span>Notizie da includere nel riassunto del giorno</span><input class="input" id="max" type="number" min="10" max="400" step="10" value="${esc(ai.maxItems)}" style="max-width:8rem"></label>
-				<p class="help">I modelli locali piccoli hanno un contesto limitato: se il riassunto si interrompe, abbassa questo numero o aumenta il contesto del modello.</p>
-				</div>
-				<div class="actions" style="margin-top:0.75rem">
-					<button class="btn" id="test" type="button">${ai.provider === 'webllm' ? 'Scarica e prova' : 'Prova la connessione'}</button>
-					<button class="btn" id="wdel" type="button" ${ai.provider === 'webllm' ? '' : 'hidden'}>Elimina il modello</button>
-				</div>
-				<p class="status" id="ai-status" role="status"></p>
+				${row(settings.theme === 'dark' ? 'moon' : settings.theme === 'light' ? 'sun' : 'auto', 'Chiaro o scuro', '', seg('theme', settings.theme, [['auto', icon('auto', 17), 'Automatico'], ['light', icon('sun', 17), 'Chiaro'], ['dark', icon('moon', 17), 'Scuro']]), 'id="theme-row"')}
+				${row('text', 'Dimensione del testo', '', seg('size', settings.size, [['s', '<span style="font-size:0.75rem">A</span>', 'Piccolo'], ['m', '<span style="font-size:0.9rem">A</span>', 'Normale'], ['l', '<span style="font-size:1.05rem">A</span>', 'Grande'], ['xl', '<span style="font-size:1.2rem">A</span>', 'Molto grande']]))}
 			</div>
 
-			<h2>Proxy per le fonti personali</h2>
-			<p class="help">Facoltativo e disattivato. Serve solo per i feed RSS aggiunti a mano che il browser non può leggere direttamente. Attenzione: il proxy vede quali feed leggi. Usa un proxy tuo, se possibile (ad esempio un Cloudflare Worker). Scrivi il prefisso dell'indirizzo oppure usa <code>{url}</code> come segnaposto.</p>
-			<label class="field"><span>Indirizzo del proxy</span><input class="input" id="proxy" value="${esc(settings.proxy)}" placeholder="https://mio-proxy.workers.dev/?url={url}" inputmode="url" autocomplete="off"></label>
-
-			<h2>I tuoi dati</h2>
-			<p class="help">Fonti e preferenze stanno solo in questo browser. Esportale per spostarle su un altro dispositivo (la chiave API non viene esportata).</p>
-			<div class="actions" style="margin-top:0">
-				<button class="btn" id="export">Esporta</button>
-				<label class="btn">Importa<input type="file" id="import" accept="application/json,.json" hidden></label>
-				<button class="btn" id="reset">Cancella tutto</button>
+			<h2>Notizie</h2>
+			<div class="card">
+				${row('rss', 'Fonti', `${settings.sel.length} selezionate${customCount ? ` · ${customCount} personali` : ''}`, chevron, 'href="#/fonti"', 'a')}
+				${row('refresh', 'Aggiornamento', state.news?.at ? `${esc(fmtShort(state.news.at))} · ${okCount} fonti attive` : 'Ogni mezz\'ora', '<button class="btn small" id="refresh-now">Aggiorna</button>')}
 			</div>
 
-			<h2>Come funziona</h2>
-			<p class="help">Ogni mezz'ora un'azione automatica su GitHub legge tutte le ${state.catalog.sources.length} fonti del catalogo e pubblica un unico pacchetto di notizie. Il tuo dispositivo scarica sempre il pacchetto intero e filtra le fonti in locale: né GitHub né i giornali sanno quali fonti segui. Si tengono solo le notizie degli ultimi tre giorni, quindi non si accumula nulla. Nessun cookie, nessuna statistica, nessun account.</p>
-			<p class="foot">${state.news?.at ? `Ultimo aggiornamento: ${esc(fmtLong(state.news.at))}. ` : ''}${okCount ? `Fonti raggiungibili: ${okCount} su ${state.catalog.sources.length}. ` : ''}<br>Codice sorgente: <a href="https://github.com/claudioaccolito/news" target="_blank" rel="noopener">github.com/claudioaccolito/news</a></p>
+			<h2>Intelligenza artificiale <span class="h2-note">facoltativa</span></h2>
+			<div class="card">
+				<div class="card-pad">
+					<p class="help" style="margin-top:0">Riassunto delle notizie del giorno e TL;DR in italiano di ogni articolo.</p>
+					<div class="modes" role="radiogroup" aria-label="Dove gira l'intelligenza artificiale">
+						${Object.entries(AI_MODES).map(([k, m]) => `<button class="mode" role="radio" data-mode="${k}" aria-checked="${aiMode(ai) === k}">
+							<span class="mode-top"><span class="mode-ic">${icon(m.icon, 22)}</span>${m.badge ? `<span class="badge ${m.badge[0]}">${m.badge[1]}</span>` : ''}</span>
+							<span class="mode-name">${m.name}</span><span class="mode-desc">${m.desc}</span></button>`).join('')}
+					</div>
+					<div id="ai-panel"></div>
+				</div>
+			</div>
+
+			<h2>Altro</h2>
+			<div class="card">
+				${row('download', 'Esporta impostazioni', 'Per spostarle su un altro dispositivo', chevron, 'id="export" type="button"', 'button')}
+				${row('upload', 'Importa impostazioni', 'Da un file esportato', `${chevron}<input type="file" id="import" accept="application/json,.json" hidden>`, '', 'label')}
+				<details class="set-details">
+					<summary>${row('globe', 'Proxy per i feed personali', settings.proxy ? 'Attivo' : 'Spento', chevron, '', 'span')}</summary>
+					<div class="card-pad">
+						<p class="help" style="margin-top:0">Solo per i feed aggiunti a mano che il browser non riesce a leggere. Il proxy vede quali feed leggi: usane uno tuo, se puoi. Usa <code>{url}</code> come segnaposto.</p>
+						<input class="input" id="proxy" value="${esc(settings.proxy)}" placeholder="https://mio-proxy.workers.dev/?url={url}" inputmode="url" autocomplete="off" aria-label="Indirizzo del proxy">
+					</div>
+				</details>
+				${row('trash', 'Cancella tutti i dati', 'Fonti, preferenze e chiavi su questo dispositivo', '', 'id="reset" type="button"', 'button').replace('class="set-row"', 'class="set-row danger"')}
+			</div>
+
+			<details class="card about">
+				<summary>${row('info', 'Come funziona la privacy', 'Perché nessuno sa cosa leggi', chevron, '', 'span')}</summary>
+				<div class="card-pad">
+					<p class="help" style="margin-top:0">Ogni mezz'ora un'azione automatica su GitHub legge tutte le ${state.catalog.sources.length} fonti del catalogo e pubblica un unico pacchetto di notizie. Il tuo dispositivo scarica sempre il pacchetto intero e sceglie le fonti in locale: né GitHub né i giornali sanno quali segui.</p>
+					<p class="help">Si tengono solo le notizie degli ultimi tre giorni e nulla si accumula. Nessun cookie, nessuna statistica, nessun account.</p>
+					<p class="help" style="margin-bottom:0">Codice sorgente: <a href="https://github.com/claudioaccolito/news" target="_blank" rel="noopener">github.com/claudioaccolito/news</a></p>
+				</div>
+			</details>
 		</section>`;
 
+	// Appearance
 	for (const b of $$('[data-theme]')) {
 		b.addEventListener('click', () => {
 			settings.theme = b.dataset.theme;
 			save();
 			applyLook();
 			for (const o of $$('[data-theme]')) o.setAttribute('aria-pressed', o === b);
+			$('#theme-row .set-ic').innerHTML = icon(settings.theme === 'dark' ? 'moon' : settings.theme === 'light' ? 'sun' : 'auto');
 		});
 	}
 	for (const b of $$('[data-look]')) {
@@ -872,107 +909,202 @@ function renderSettings() {
 		});
 	}
 
-	const status = $('#ai-status');
-	const isDevice = () => ai.provider === 'webllm';
-	const syncAi = () => {
-		ai.base = $('#base').value.trim();
-		ai.model = isDevice() ? ($('[name="wmodel"]:checked')?.value || WebLLM.MODELS[0].id) : $('#model').value.trim();
-		ai.key = $('#key').value.trim();
-		ai.auto = $('#auto').checked;
-		ai.maxItems = Math.max(10, Math.min(400, Number($('#max').value) || 60));
-		save();
-		setNav('/impostazioni');
-	};
-	$('#preset').addEventListener('change', (e) => {
-		const k = e.target.value;
-		const p = AI.PRESETS[k];
-		ai.preset = k;
-		ai.provider = p ? p.provider : 'none';
-		if (p) {
-			$('#base').value = p.base;
-			$('#model').value = p.provider === 'webllm' ? '' : p.model;
-			$('#ai-help').innerHTML = p.help;
-			$('#key-field').hidden = !p.key;
-			if (!p.key) $('#key').value = '';
-		}
-		$('#ai-fields').hidden = !p;
-		for (const [id, show] of [['device-fields', isDevice()], ['wdel', isDevice()], ['remote-fields', !isDevice()], ['max-field', !isDevice()]]) $(`#${id}`).hidden = !show;
-		$('#test').textContent = isDevice() ? 'Scarica e prova' : 'Prova la connessione';
-		status.textContent = '';
-		syncAi();
-		const radio = $(`[name="wmodel"][value="${ai.model}"]`);
-		if (radio) radio.checked = true;
-		if (isDevice()) refreshDevice();
+	// News
+	$('#refresh-now').addEventListener('click', async (e) => {
+		e.target.disabled = true;
+		e.target.textContent = '…';
+		await loadNews(true);
+		toast(`${selectedItems().length} notizie aggiornate`);
+		const y = window.scrollY;
+		renderSettings();
+		window.scrollTo(0, y);
 	});
-	for (const r of $$('[name="wmodel"]')) r.addEventListener('change', syncAi);
+
+	// AI
+	for (const b of $$('[data-mode]')) {
+		b.addEventListener('click', () => {
+			const mode = b.dataset.mode;
+			if (mode === aiMode(ai)) return;
+			if (mode === 'off') { ai.provider = 'none'; ai.preset = ''; }
+			else if (mode === 'device') usePreset('device');
+			else if (mode === 'computer') usePreset(COMPUTER_APPS.some(([k]) => k === ai.lastComputer) ? ai.lastComputer : 'ollama');
+			else usePreset(ONLINE_SERVICES.some(([k]) => k === ai.lastOnline) ? ai.lastOnline : 'openai');
+			save();
+			for (const o of $$('[data-mode]')) o.setAttribute('aria-checked', o === b);
+			setNav('/impostazioni');
+			renderAiPanel();
+		});
+	}
+
+	function usePreset(k) {
+		const p = AI.PRESETS[k];
+		const changed = ai.preset !== k;
+		ai.preset = k;
+		ai.provider = p.provider;
+		if (changed) {
+			ai.base = p.base;
+			ai.model = p.model || '';
+			ai.key = '';
+		}
+		if (p.provider === 'webllm' && !WebLLM.MODELS.some((m) => m.id === ai.model)) ai.model = WebLLM.MODELS[0].id;
+		if (COMPUTER_APPS.some(([c]) => c === k)) ai.lastComputer = k;
+		if (ONLINE_SERVICES.some(([c]) => c === k)) ai.lastOnline = k;
+	}
+
+	renderAiPanel();
+
+	function renderAiPanel() {
+		const panel = $('#ai-panel');
+		const mode = aiMode(ai);
+		if (mode === 'off') { panel.innerHTML = ''; return; }
+		const p = AI.PRESETS[ai.preset] || AI.PRESETS.custom;
+		const autoRow = `<label class="switch-row"><span><span class="set-title">TL;DR automatico</span><span class="set-sub">Appena apri un articolo</span></span><input type="checkbox" class="switch" id="auto" ${ai.auto ? 'checked' : ''}></label>`;
+		const status = '<p class="status" id="ai-status" role="status"></p>';
+
+		if (mode === 'device') {
+			panel.innerHTML = `
+				<div class="panel">
+					<p class="status" id="gpu-status" role="status">Controllo il supporto WebGPU…</p>
+					<div class="models" role="radiogroup" aria-label="Modello">
+						${WebLLM.MODELS.map((m) => `<label class="model"><input type="radio" name="wmodel" value="${m.id}" ${ai.model === m.id ? 'checked' : ''}><span class="model-text"><span class="model-name">${esc(m.label)} <small>${m.size}</small> <small class="ok" data-cached="${m.id}"></small></span><span class="set-sub">${esc(m.note)}</span></span></label>`).join('')}
+					</div>
+					<progress id="wprog" max="1" value="0" hidden></progress>
+					<div class="actions" style="margin-top:0.75rem">
+						<button class="btn primary" id="test" type="button">${icon('download', 17)} Scarica e prova</button>
+						<button class="btn" id="wdel" type="button">${icon('trash', 17)} Elimina</button>
+					</div>
+					${status}
+					<p class="help">${p.help}</p>
+					${autoRow}
+				</div>`;
+		} else {
+			const list = mode === 'computer' ? COMPUTER_APPS : ONLINE_SERVICES;
+			const custom = ai.preset === 'custom';
+			panel.innerHTML = `
+				<div class="panel">
+					${seg('svc', ai.preset, list.map(([k, l]) => [k, l]))}
+					<p class="help">${p.help}</p>
+					${p.key ? `<label class="field"><span>${icon('key', 15)} Chiave API</span><input class="input" id="key" type="password" value="${esc(ai.key)}" autocomplete="off" placeholder="Resta solo su questo dispositivo"></label>` : ''}
+					${custom ? `<label class="field"><span>Indirizzo</span><input class="input" id="base" value="${esc(ai.base)}" placeholder="https://api.esempio.com/v1" inputmode="url" autocomplete="off"></label>` : ''}
+					<label class="field"><span>Modello</span>
+						<span class="inline"><input class="input" id="model" list="models" value="${esc(ai.model)}" placeholder="${mode === 'computer' ? 'es. llama3.2' : 'scegli dall\'elenco'}" autocomplete="off"><button class="btn small" id="list" type="button">Elenca</button></span>
+						<datalist id="models"></datalist>
+					</label>
+					<div class="actions" style="margin-top:0.25rem"><button class="btn primary" id="test" type="button">${icon('sparkle', 17)} Prova</button></div>
+					${status}
+					${autoRow}
+					<details class="adv">
+						<summary>Opzioni avanzate</summary>
+						${custom ? '' : `<label class="field"><span>Indirizzo</span><input class="input" id="base" value="${esc(ai.base)}" inputmode="url" autocomplete="off"></label>`}
+						<label class="field"><span>Notizie nel riassunto del giorno</span><input class="input" id="max" type="number" min="10" max="400" step="10" value="${esc(ai.maxItems)}" style="max-width:8rem"></label>
+						<p class="help">I modelli piccoli hanno poca memoria: se il riassunto si interrompe, abbassa questo numero.</p>
+					</details>
+				</div>`;
+		}
+		bindAiPanel(mode);
+	}
+
+	function bindAiPanel(mode) {
+		const status = $('#ai-status');
+		const val = (id) => $(`#${id}`)?.value.trim();
+		const sync = () => {
+			if (mode === 'device') ai.model = $('[name="wmodel"]:checked')?.value || WebLLM.MODELS[0].id;
+			else {
+				if ($('#base')) ai.base = val('base');
+				if ($('#model')) ai.model = val('model');
+				if ($('#key')) ai.key = val('key');
+				if ($('#max')) ai.maxItems = Math.max(10, Math.min(400, Number(val('max')) || 60));
+			}
+			ai.auto = $('#auto').checked;
+			save();
+			setNav('/impostazioni');
+		};
+		for (const el of $$('#ai-panel input')) el.addEventListener('change', sync);
+		$('#key')?.addEventListener('input', sync);
+
+		for (const b of $$('[data-svc]')) {
+			b.addEventListener('click', () => {
+				usePreset(b.dataset.svc);
+				save();
+				renderAiPanel();
+			});
+		}
+
+		$('#list')?.addEventListener('click', async () => {
+			sync();
+			status.className = 'status';
+			status.textContent = 'Chiedo l\'elenco dei modelli…';
+			try {
+				const models = await AI.listModels(ai);
+				$('#models').innerHTML = models.map((m) => `<option value="${esc(m)}">`).join('');
+				status.className = 'status ok';
+				status.textContent = models.length ? `${models.length} modelli: tocca il campo Modello per sceglierne uno.` : 'Nessun modello trovato.';
+				if (!ai.model && models[0]) { $('#model').value = models[0]; sync(); }
+			} catch (e) {
+				status.className = 'status err';
+				status.textContent = e.message;
+			}
+		});
+
+		$('#test').addEventListener('click', async () => {
+			sync();
+			const btn = $('#test');
+			btn.disabled = true;
+			status.className = 'status';
+			status.textContent = 'Provo…';
+			const prog = $('#wprog');
+			try {
+				const r = await AI.complete(ai, AI.SYSTEM, 'Rispondi solo con: Funziona!', (t) => { status.textContent = t; }, undefined, (pr) => {
+					if (prog) { prog.hidden = false; prog.value = pr.progress || 0; }
+					status.textContent = progressText(pr);
+				});
+				status.className = 'status ok';
+				status.textContent = `Funziona. Risposta: «${truncate(r, 100)}»`;
+				if (mode === 'device') refreshDevice();
+			} catch (e) {
+				status.className = 'status err';
+				status.textContent = e.message;
+			}
+			if (prog) prog.hidden = true;
+			if (btn.isConnected) btn.disabled = false;
+		});
+
+		if (mode !== 'device') return;
+
+		$('#wdel').addEventListener('click', async () => {
+			sync();
+			try {
+				await WebLLM.remove(ai.model);
+				toast('Modello eliminato dal dispositivo');
+			} catch (e) {
+				toast(`Non riesco a eliminarlo: ${e.message}`);
+			}
+			refreshDevice();
+		});
+		refreshDevice();
+	}
 
 	async function refreshDevice() {
 		const gpu = $('#gpu-status');
 		if (!gpu) return;
 		const sup = await WebLLM.support();
+		if (!gpu.isConnected) return;
 		gpu.className = `status ${sup.ok ? 'ok' : 'err'}`;
-		gpu.textContent = sup.ok ? `WebGPU disponibile${sup.f16 ? '' : ' (senza 16 bit: userò la versione a 32 bit, più pesante)'}.` : sup.why;
+		gpu.textContent = sup.ok ? `Il tuo dispositivo supporta WebGPU${sup.f16 ? '' : ' (userò la versione a 32 bit, più pesante)'}.` : sup.why;
 		$('#test').disabled = !sup.ok;
 		if (!sup.ok) return;
 		for (const m of WebLLM.MODELS) {
 			const el = $(`[data-cached="${m.id}"]`);
-			if (el) el.textContent = (await WebLLM.isCached(m.id)) ? 'scaricato' : '';
+			if (el) el.textContent = (await WebLLM.isCached(m.id)) ? '· scaricato' : '';
 		}
 	}
-	if (isDevice()) refreshDevice();
 
-	$('#wdel').addEventListener('click', async () => {
-		syncAi();
-		try {
-			await WebLLM.remove(ai.model);
-			toast('Modello eliminato dal dispositivo');
-		} catch (e) {
-			toast(`Non riesco a eliminarlo: ${e.message}`);
-		}
-		refreshDevice();
+	// Other
+	$('#proxy').addEventListener('change', (e) => {
+		settings.proxy = e.target.value.trim();
+		save();
+		toast(settings.proxy ? 'Proxy salvato' : 'Proxy spento');
 	});
-	for (const id of ['base', 'model', 'key', 'max']) $(`#${id}`).addEventListener('change', syncAi);
-	$('#auto').addEventListener('change', syncAi);
-
-	$('#list').addEventListener('click', async () => {
-		syncAi();
-		status.className = 'status';
-		status.textContent = 'Chiedo l\'elenco dei modelli…';
-		try {
-			const models = await AI.listModels(ai);
-			$('#models').innerHTML = models.map((m) => `<option value="${esc(m)}">`).join('');
-			status.className = 'status ok';
-			status.textContent = models.length ? `${models.length} modelli disponibili: ${models.slice(0, 6).join(', ')}${models.length > 6 ? '…' : ''}` : 'Nessun modello trovato.';
-			if (!ai.model && models[0]) { $('#model').value = models[0]; syncAi(); }
-		} catch (e) {
-			status.className = 'status err';
-			status.textContent = e.message;
-		}
-	});
-	$('#test').addEventListener('click', async () => {
-		syncAi();
-		status.className = 'status';
-		status.textContent = 'Provo…';
-		try {
-			const prog = $('#wprog');
-			const r = await AI.complete(ai, AI.SYSTEM, 'Rispondi solo con: Funziona!', (t) => { status.textContent = t; }, undefined, (pr) => {
-				prog.hidden = false;
-				prog.value = pr.progress || 0;
-				status.textContent = progressText(pr);
-			});
-			prog.hidden = true;
-			if (isDevice()) refreshDevice();
-			status.className = 'status ok';
-			status.textContent = `Risposta: ${truncate(r, 120)}`;
-		} catch (e) {
-			$('#wprog').hidden = true;
-			status.className = 'status err';
-			status.textContent = e.message;
-		}
-	});
-
-	$('#proxy').addEventListener('change', (e) => { settings.proxy = e.target.value.trim(); save(); });
-
 	$('#export').addEventListener('click', () => {
 		const blob = new Blob([JSON.stringify(exportSettings(), null, 2)], { type: 'application/json' });
 		const a = document.createElement('a');
@@ -986,6 +1118,8 @@ function renderSettings() {
 		if (!file) return;
 		try {
 			importSettings(JSON.parse(await file.text()));
+			applyLook();
+			document.documentElement.dataset.size = settings.size;
 			indexSources();
 			await loadCustom();
 			toast('Impostazioni importate');
