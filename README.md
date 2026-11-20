@@ -8,8 +8,9 @@ Un lettore di notizie **solo testo**, installabile come PWA, senza account e sen
 - Notizie dalla più recente, con fonte e data; filtri per categoria e fonte, ricerca istantanea.
 - Tocca una notizia per leggerla: titolo, autore, data e testo (quando la fonte lo pubblica nel feed), con il pulsante per aprire l'originale.
 - Aggiungi qualsiasi feed RSS o Atom (blog, ricerche su Hacker News…).
-- Facoltativo: un modello AI, **locale** (Ollama, LM Studio, llama.cpp) o via API (OpenAI, Anthropic, OpenRouter, qualsiasi endpoint compatibile OpenAI), per il riassunto del giorno e un TL;DR in italiano di ogni articolo.
+- Facoltativo: un modello AI **nel dispositivo** (WebLLM via WebGPU, anche su telefono), **locale** (Ollama, LM Studio, llama.cpp) o via API (OpenAI, Anthropic, OpenRouter, qualsiasi endpoint compatibile OpenAI), per il riassunto del giorno e un TL;DR in italiano di ogni articolo.
 - Tema chiaro/scuro, dimensione del testo, esporta/importa le impostazioni.
+- Su PC: barra laterale con gli argomenti e scorciatoie da tastiera (`/` cerca, `j`/`k` scorri, `Invio` apri, `o` apri la fonte, `Esc` indietro).
 
 ## Privacy, costi e manutenzione
 
@@ -46,3 +47,7 @@ Poi in Edicola: Impostazioni → Intelligenza artificiale → Ollama.
 | `sw.js`, `manifest.webmanifest` | PWA e uso offline |
 
 Prova in locale: `node scripts/build-news.mjs _site/data`, poi servi la cartella con `data/` da `_site`.
+
+## AI nel dispositivo (WebLLM)
+
+Impostazioni → Intelligenza artificiale → *Nel dispositivo*. Serve un browser con WebGPU (Chrome/Edge recenti, anche su Android). Il modello (400 MB – 1,4 GB) si scarica una volta sola e resta nella cache del browser; da lì in poi funziona anche offline. Consigliato Qwen 2.5 1,5B. Ottimo per i TL;DR; il riassunto del giorno usa al massimo 35 notizie per stare nel contesto del modello.

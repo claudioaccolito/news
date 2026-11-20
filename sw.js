@@ -13,6 +13,8 @@ const SHELL_FILES = [
 	'js/ai.js',
 	'js/store.js',
 	'js/feed-parser.js',
+	'js/webllm.js',
+	'js/webllm-worker.js',
 	'manifest.webmanifest',
 	'icons/icon.svg',
 	'icons/icon-192.png'
@@ -24,7 +26,8 @@ self.addEventListener('install', (e) => {
 
 self.addEventListener('activate', (e) => {
 	e.waitUntil((async () => {
-		for (const k of await caches.keys()) if (k !== SHELL && k !== DATA) await caches.delete(k);
+		// Only our own caches: the WebLLM model cache must survive app updates.
+		for (const k of await caches.keys()) if (k.startsWith('edicola-') && k !== SHELL && k !== DATA) await caches.delete(k);
 		await self.clients.claim();
 	})());
 });

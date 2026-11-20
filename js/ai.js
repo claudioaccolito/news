@@ -1,7 +1,13 @@
 // Optional AI: local models (Ollama, LM Studio, llama.cpp) through the OpenAI-compatible API,
 // or a cloud API with the user's own key. Calls go straight from the browser to the endpoint.
 
+import * as WebLLM from './webllm.js';
+
 export const PRESETS = {
+	device: {
+		label: 'Nel dispositivo (WebLLM, sperimentale)', provider: 'webllm', base: '', model: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', key: false,
+		help: 'Il modello gira dentro il browser con la GPU del dispositivo (WebGPU), anche offline: nulla esce dal telefono o dal PC. Va scaricato una volta e resta salvato nel browser. Ideale per i TL;DR; il riassunto del giorno è più lento e usa meno notizie.'
+	},
 	ollama: {
 		label: 'Ollama (locale)', provider: 'openai', base: 'http://localhost:11434/v1', model: 'llama3.2', key: false,
 		help: 'Avvia Ollama permettendo a questa pagina di contattarlo: <code>OLLAMA_ORIGINS="https://claudioaccolito.github.io" ollama serve</code>. Poi scarica un modello, ad esempio <code>ollama pull llama3.2</code> o <code>ollama pull qwen2.5:7b</code>.'
@@ -32,7 +38,8 @@ export const PRESETS = {
 	}
 };
 
-export const isEnabled = (ai) => ai.provider !== 'none' && !!ai.base;
+export const isEnabled = (ai) => ai.provider === 'webllm' ? !!ai.model : ai.provider !== 'none' && !!ai.base;
+export const isLocal = (ai) => ai.provider === 'webllm' || /localhost|127\.0\.0\.1|\[::1\]/.test(ai.base);
 
 const trimSlash = (s) => (s || '').replace(/\/+$/, '');
 
@@ -80,7 +87,11 @@ export async function listModels(ai) {
 }
 
 // Streams the answer, calling onText(fullTextSoFar) as tokens arrive. Resolves with the final text.
-export async function complete(ai, system, user, onText, signal) {
+export async function complete(ai, system, user, onText, signal, onProgress) {
+	if (ai.provider === 'webllm') {
+		const text = await WebLLM.complete(ai.model, system, user, (t) => onText?.(stripThinking(t)), signal, onProgress);
+		return stripThinking(text).trim();
+	}
 	const anthropic = ai.provider === 'anthropic';
 	const url = anthropic ? `${trimSlash(ai.base)}/v1/messages` : `${trimSlash(ai.base)}/chat/completions`;
 	const body = anthropic

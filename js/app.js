@@ -1,5 +1,6 @@
 import { settings, save, readState, tldrCache, recapCache, resetAll, exportSettings, importSettings } from './store.js';
 import * as AI from './ai.js';
+import * as WebLLM from './webllm.js';
 import { parseFeed, truncate } from './feed-parser.js';
 
 const view = document.getElementById('view');
@@ -235,7 +236,30 @@ function renderList() {
 	if (state.filter.src && !srcs.some((s) => s.id === state.filter.src)) state.filter.src = '';
 
 	const at = state.news?.at;
+	// Per-category counts for the desktop sidebar (ignoring the category filter itself).
+	const counts = new Map();
+	const all = selectedItems();
+	for (const it of all) {
+		const c = state.sources.get(it.s)?.cat;
+		counts.set(c, (counts.get(c) || 0) + 1);
+	}
 	view.innerHTML = `
+		<div class="layout">
+		<aside class="side" aria-label="Argomenti">
+			<p class="side-h">Argomenti</p>
+			<button class="side-link" data-cat="" aria-pressed="${!state.filter.cat}"><span>Tutte</span><span class="n">${all.length}</span></button>
+			${cats.map((c) => `<button class="side-link" data-cat="${c.id}" aria-pressed="${state.filter.cat === c.id}"><span>${esc(c.name)}</span><span class="n">${counts.get(c.id) || 0}</span></button>`).join('')}
+			<a class="side-more" href="#/fonti">Gestisci le fonti →</a>
+			<p class="side-h">Tastiera</p>
+			<dl class="keys">
+				<dt><kbd>/</kbd></dt><dd>cerca</dd>
+				<dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>notizia successiva / precedente</dd>
+				<dt><kbd>Invio</kbd></dt><dd>apri</dd>
+				<dt><kbd>o</kbd></dt><dd>apri la fonte</dd>
+				<dt><kbd>Esc</kbd></dt><dd>torna indietro</dd>
+			</dl>
+		</aside>
+		<div class="main">
 		<div class="tools">
 			<label class="search">
 				<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 15.5 20 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -253,7 +277,9 @@ function renderList() {
 				<span>${at ? `Aggiornato ${fmtShort(at)}` : state.news?.offline ? 'Offline' : ''} · <button class="linkbtn" id="refresh">aggiorna</button></span>
 			</div>
 		</div>
-		<div id="items"></div>`;
+		<div id="items"></div>
+		</div>
+		</div>`;
 
 	renderItems();
 
@@ -262,13 +288,16 @@ function renderList() {
 		clearTimeout(t);
 		t = setTimeout(() => { state.filter.q = e.target.value; state.limit = PAGE; renderItems(); }, 120);
 	});
-	for (const chip of $$('.chip')) {
+	for (const chip of $$('[data-cat]')) {
 		chip.addEventListener('click', () => {
 			state.filter.cat = chip.dataset.cat;
 			state.filter.src = '';
 			state.limit = PAGE;
+			const y = window.scrollY;
 			renderList();
-			$(`.chip[data-cat="${state.filter.cat}"]`)?.scrollIntoView({ block: 'nearest', inline: 'center' });
+			if (chip.classList.contains('side-link')) window.scrollTo(0, Math.min(y, 0));
+			const c = $(`.chip[data-cat="${state.filter.cat}"]`);
+			if (c && c.offsetParent) c.scrollIntoView({ block: 'nearest', inline: 'center' });
 		});
 	}
 	$('#src').addEventListener('change', (e) => { state.filter.src = e.target.value; state.limit = PAGE; renderItems(); });
@@ -387,6 +416,13 @@ async function renderArticle(id) {
 	if (ai) setupTldr(item, s, text);
 }
 
+function progressText(p) {
+	const pct = Math.round((p.progress || 0) * 100);
+	if (/cache/i.test(p.text || '')) return `Carico il modello… ${pct}%`;
+	if (/fetch|download/i.test(p.text || '')) return `Scarico il modello (solo la prima volta)… ${pct}%`;
+	return pct ? `Preparo il modello… ${pct}%` : 'Preparo il modello…';
+}
+
 function setupTldr(item, src, text) {
 	const out = $('#tldr-out');
 	if (!out) return;
@@ -400,9 +436,11 @@ function setupTldr(item, src, text) {
 		const ctrl = state.aiCtrl = new AbortController();
 		out.innerHTML = '<p class="cursor"></p>';
 		try {
-			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.tldrPrompt(item, src.name, text), (t) => {
+			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.tldrPrompt(item, src.name, settings.ai.provider === 'webllm' ? (text || '').slice(0, 6000) : text), (t) => {
 				if (out.isConnected) out.innerHTML = AI.renderMarkdown(t) || '<p class="cursor"></p>';
-			}, ctrl.signal);
+			}, ctrl.signal, (pr) => {
+				if (out.isConnected) out.innerHTML = `<p class="help" style="margin:0">${esc(progressText(pr))}</p>`;
+			});
 			if (res) tldrCache.set(item.id, res);
 			if (out.isConnected) out.innerHTML = AI.renderMarkdown(res);
 		} catch (e) {
@@ -440,7 +478,8 @@ function renderRecap() {
 	const ai = AI.isEnabled(settings.ai);
 	const label = filterLabel();
 	const items = recapItems();
-	const max = Math.max(10, Number(settings.ai.maxItems) || 60);
+	const device = settings.ai.provider === 'webllm';
+	const max = device ? WebLLM.RECAP_LIMIT.items : Math.max(10, Number(settings.ai.maxItems) || 60);
 	const used = items.slice(0, max);
 	const key = `${new Date().toDateString()}|${state.filter.cat}|${state.filter.src}|${norm(state.filter.q)}`;
 	const cached = recapCache.get(key);
@@ -456,7 +495,7 @@ function renderRecap() {
 					<button class="btn ${cached ? '' : 'primary'}" id="go">${cached ? 'Rigenera' : 'Genera il riassunto'}</button>
 					<a class="btn" href="#/">Torna alle notizie</a>
 				</div>
-				<p class="help">${/localhost|127\.0\.0\.1/.test(settings.ai.base) ? 'Il riassunto viene generato sul tuo computer: nessuna notizia esce dal dispositivo.' : `Titoli e descrizioni vengono inviati a ${esc(settings.ai.base.replace(/^https?:\/\//, '').split('/')[0])}.`} I filtri attivi nella pagina delle notizie decidono cosa riassumere.</p>`}
+				<p class="help">${AI.isLocal(settings.ai) ? (device ? 'Il riassunto viene generato sul tuo dispositivo, anche offline: nessuna notizia esce da qui. I modelli piccoli sono più lenti e leggono meno notizie.' : 'Il riassunto viene generato sul tuo computer: nessuna notizia esce dal dispositivo.') : `Titoli e descrizioni vengono inviati a ${esc(settings.ai.base.replace(/^https?:\/\//, '').split('/')[0])}.`} I filtri attivi nella pagina delle notizie decidono cosa riassumere.</p>`}
 		</section>`;
 
 	const go = $('#go');
@@ -470,12 +509,14 @@ function renderRecap() {
 		out.innerHTML = '<p class="cursor"></p>';
 		const lines = used.map((it) => {
 			const s = state.sources.get(it.s);
-			return `- [${s?.name || it.s}] ${it.t}${it.d ? ' — ' + truncate(it.d, 160) : ''}`;
+			return `- [${s?.name || it.s}] ${it.t}${it.d ? ' — ' + truncate(it.d, device ? WebLLM.RECAP_LIMIT.desc : 160) : ''}`;
 		});
 		try {
 			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.recapPrompt(lines, label), (t) => {
 				if (out.isConnected) out.innerHTML = AI.renderMarkdown(t) + '<span class="cursor"></span>';
-			}, ctrl.signal);
+			}, ctrl.signal, (pr) => {
+				if (out.isConnected) out.innerHTML = `<p class="help">${esc(progressText(pr))}</p>`;
+			});
 			if (res) recapCache.set(key, res);
 			if (out.isConnected) out.innerHTML = AI.renderMarkdown(res);
 		} catch (e) {
@@ -673,7 +714,10 @@ function renderWelcome() {
 	const pickSources = () => {
 		const out = [];
 		for (const cat of picked) {
-			const list = state.catalog.sources.filter((s) => s.cat === cat && (lang === 'both' || s.lang === lang));
+			// Prefer sources that are working right now.
+			const st = state.news?.status || {};
+			const ok = (s) => st[s.id] === undefined || (typeof st[s.id] === 'number' && st[s.id] > 0);
+			const list = state.catalog.sources.filter((s) => s.cat === cat && (lang === 'both' || s.lang === lang) && ok(s));
 			let chosen = list.filter((s) => s.def);
 			if (!chosen.length) chosen = list.slice(0, 2);
 			out.push(...chosen.map((s) => s.id));
@@ -736,16 +780,30 @@ function renderSettings() {
 			</label>
 			<div id="ai-fields" ${presetKey ? '' : 'hidden'}>
 				<p class="help" id="ai-help">${preset?.help || ''}</p>
+				<div id="device-fields" ${ai.provider === 'webllm' ? '' : 'hidden'}>
+					<p class="status" id="gpu-status" role="status"></p>
+					<div class="field"><span>Modello</span>
+						${WebLLM.MODELS.map((m) => `<label class="row model-row"><input type="radio" name="wmodel" value="${m.id}" ${ai.model === m.id ? 'checked' : ''}><span class="grow">${esc(m.label)}<small>${m.size}</small><small class="ok" data-cached="${m.id}"></small><span class="sub">${esc(m.note)}</span></span></label>`).join('')}
+					</div>
+					<progress id="wprog" max="1" value="0" hidden></progress>
+				</div>
+				<div id="remote-fields" ${ai.provider === 'webllm' ? 'hidden' : ''}>
 				<label class="field"><span>Indirizzo</span><input class="input" id="base" value="${esc(ai.base)}" placeholder="http://localhost:11434/v1" inputmode="url" autocomplete="off"></label>
 				<label class="field"><span>Modello</span>
 					<div style="display:flex;gap:0.5rem"><input class="input" id="model" list="models" value="${esc(ai.model)}" placeholder="es. llama3.2" autocomplete="off"><button class="btn small" id="list" type="button">Elenca</button></div>
 					<datalist id="models"></datalist>
 				</label>
 				<label class="field" id="key-field" ${preset?.key ? '' : 'hidden'}><span>Chiave API</span><input class="input" id="key" type="password" value="${esc(ai.key)}" autocomplete="off" placeholder="Resta solo su questo dispositivo"></label>
+				</div>
 				<label class="row"><input type="checkbox" id="auto" ${ai.auto ? 'checked' : ''}><span class="grow">Crea il TL;DR appena apro un articolo</span></label>
+				<div id="max-field" ${ai.provider === 'webllm' ? 'hidden' : ''}>
 				<label class="field" style="margin-top:0.75rem"><span>Notizie da includere nel riassunto del giorno</span><input class="input" id="max" type="number" min="10" max="400" step="10" value="${esc(ai.maxItems)}" style="max-width:8rem"></label>
 				<p class="help">I modelli locali piccoli hanno un contesto limitato: se il riassunto si interrompe, abbassa questo numero o aumenta il contesto del modello.</p>
-				<button class="btn" id="test" type="button">Prova la connessione</button>
+				</div>
+				<div class="actions" style="margin-top:0.75rem">
+					<button class="btn" id="test" type="button">${ai.provider === 'webllm' ? 'Scarica e prova' : 'Prova la connessione'}</button>
+					<button class="btn" id="wdel" type="button" ${ai.provider === 'webllm' ? '' : 'hidden'}>Elimina il modello</button>
+				</div>
 				<p class="status" id="ai-status" role="status"></p>
 			</div>
 
@@ -785,9 +843,10 @@ function renderSettings() {
 	}
 
 	const status = $('#ai-status');
+	const isDevice = () => ai.provider === 'webllm';
 	const syncAi = () => {
 		ai.base = $('#base').value.trim();
-		ai.model = $('#model').value.trim();
+		ai.model = isDevice() ? ($('[name="wmodel"]:checked')?.value || WebLLM.MODELS[0].id) : $('#model').value.trim();
 		ai.key = $('#key').value.trim();
 		ai.auto = $('#auto').checked;
 		ai.maxItems = Math.max(10, Math.min(400, Number($('#max').value) || 60));
@@ -801,14 +860,46 @@ function renderSettings() {
 		ai.provider = p ? p.provider : 'none';
 		if (p) {
 			$('#base').value = p.base;
-			$('#model').value = p.model;
+			$('#model').value = p.provider === 'webllm' ? '' : p.model;
 			$('#ai-help').innerHTML = p.help;
 			$('#key-field').hidden = !p.key;
 			if (!p.key) $('#key').value = '';
 		}
 		$('#ai-fields').hidden = !p;
+		for (const [id, show] of [['device-fields', isDevice()], ['wdel', isDevice()], ['remote-fields', !isDevice()], ['max-field', !isDevice()]]) $(`#${id}`).hidden = !show;
+		$('#test').textContent = isDevice() ? 'Scarica e prova' : 'Prova la connessione';
 		status.textContent = '';
 		syncAi();
+		const radio = $(`[name="wmodel"][value="${ai.model}"]`);
+		if (radio) radio.checked = true;
+		if (isDevice()) refreshDevice();
+	});
+	for (const r of $$('[name="wmodel"]')) r.addEventListener('change', syncAi);
+
+	async function refreshDevice() {
+		const gpu = $('#gpu-status');
+		if (!gpu) return;
+		const sup = await WebLLM.support();
+		gpu.className = `status ${sup.ok ? 'ok' : 'err'}`;
+		gpu.textContent = sup.ok ? `WebGPU disponibile${sup.f16 ? '' : ' (senza 16 bit: userò la versione a 32 bit, più pesante)'}.` : sup.why;
+		$('#test').disabled = !sup.ok;
+		if (!sup.ok) return;
+		for (const m of WebLLM.MODELS) {
+			const el = $(`[data-cached="${m.id}"]`);
+			if (el) el.textContent = (await WebLLM.isCached(m.id)) ? 'scaricato' : '';
+		}
+	}
+	if (isDevice()) refreshDevice();
+
+	$('#wdel').addEventListener('click', async () => {
+		syncAi();
+		try {
+			await WebLLM.remove(ai.model);
+			toast('Modello eliminato dal dispositivo');
+		} catch (e) {
+			toast(`Non riesco a eliminarlo: ${e.message}`);
+		}
+		refreshDevice();
 	});
 	for (const id of ['base', 'model', 'key', 'max']) $(`#${id}`).addEventListener('change', syncAi);
 	$('#auto').addEventListener('change', syncAi);
@@ -833,10 +924,18 @@ function renderSettings() {
 		status.className = 'status';
 		status.textContent = 'Provo…';
 		try {
-			const r = await AI.complete(ai, AI.SYSTEM, 'Rispondi solo con: Funziona!', (t) => { status.textContent = t; });
+			const prog = $('#wprog');
+			const r = await AI.complete(ai, AI.SYSTEM, 'Rispondi solo con: Funziona!', (t) => { status.textContent = t; }, undefined, (pr) => {
+				prog.hidden = false;
+				prog.value = pr.progress || 0;
+				status.textContent = progressText(pr);
+			});
+			prog.hidden = true;
+			if (isDevice()) refreshDevice();
 			status.className = 'status ok';
 			status.textContent = `Risposta: ${truncate(r, 120)}`;
 		} catch (e) {
+			$('#wprog').hidden = true;
 			status.className = 'status err';
 			status.textContent = e.message;
 		}
@@ -891,6 +990,7 @@ function route() {
 		return;
 	}
 	setNav(path);
+	view.classList.toggle('wide', path === '/');
 	if (!state.news && (path === '/' || path.startsWith('/a/') || path === '/riepilogo')) {
 		view.innerHTML = '<p class="loading">Caricamento…</p>';
 		state.ready.then(route);
@@ -915,6 +1015,51 @@ function route() {
 	if (!path.startsWith('/a/')) document.title = 'Edicola';
 }
 
+/* ---------- Keyboard (desktop) ---------- */
+
+function onKey(e) {
+	if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
+	const tag = e.target.tagName;
+	if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) {
+		if (e.key === 'Escape') e.target.blur();
+		return;
+	}
+	const path = location.hash.slice(1) || '/';
+	if (path === '/') {
+		if (e.key === '/') {
+			e.preventDefault();
+			$('#q')?.focus();
+		} else if (e.key === 'j' || e.key === 'k') {
+			const links = $$('.item a');
+			if (!links.length) return;
+			const i = links.indexOf(document.activeElement);
+			const next = e.key === 'j' ? Math.min(i + 1, links.length - 1) : Math.max(i - 1, 0);
+			links[i < 0 ? 0 : next].focus();
+			links[i < 0 ? 0 : next].scrollIntoView({ block: 'nearest' });
+			e.preventDefault();
+		} else if (e.key === 'o') {
+			const id = document.activeElement?.closest?.('.item a')?.getAttribute('href')?.slice(4);
+			const it = id && allItems().find((x) => x.id === id);
+			if (it) window.open(it.u, '_blank', 'noopener,noreferrer');
+		}
+	} else if (path.startsWith('/a/')) {
+		const id = decodeURIComponent(path.slice(3));
+		if (e.key === 'Escape') {
+			$('#back')?.click();
+		} else if (e.key === 'o') {
+			const it = allItems().find((x) => x.id === id);
+			if (it) window.open(it.u, '_blank', 'noopener,noreferrer');
+		} else if (e.key === 'j' || e.key === 'k') {
+			const list = filteredItems();
+			const i = list.findIndex((x) => x.id === id);
+			const next = list[i + (e.key === 'j' ? 1 : -1)];
+			if (i >= 0 && next) location.replace(`#/a/${next.id}`);
+		}
+	} else if (e.key === 'Escape') {
+		location.hash = '#/';
+	}
+}
+
 async function start() {
 	try {
 		await loadCatalog();
@@ -925,6 +1070,7 @@ async function start() {
 	state.ready = loadNews();
 	if (settings.onboarded) await state.ready;
 	window.addEventListener('hashchange', route);
+	document.addEventListener('keydown', onKey);
 	route();
 
 	document.addEventListener('visibilitychange', async () => {
