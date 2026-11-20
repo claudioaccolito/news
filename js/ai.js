@@ -6,7 +6,7 @@ import * as WebLLM from './webllm.js';
 export const PRESETS = {
 	device: {
 		label: 'Nel dispositivo (WebLLM, sperimentale)', provider: 'webllm', base: '', model: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', key: false,
-		help: 'Il modello gira dentro il browser con la GPU del dispositivo (WebGPU), anche offline: nulla esce dal telefono o dal PC. Va scaricato una volta e resta salvato nel browser. Ideale per i TL;DR; il riassunto del giorno è più lento e usa meno notizie.'
+		help: 'Il modello gira dentro il browser con la GPU del dispositivo (WebGPU), anche offline: nulla esce dal telefono o dal PC. Va scaricato una volta (da Hugging Face e GitHub, progetto MLC) e resta salvato nel browser. Ideale per i TL;DR; il riassunto del giorno impegna molto il telefono, quindi usa meno notizie. Dopo un minuto e mezzo di inattività il modello viene tolto dalla memoria.'
 	},
 	ollama: {
 		label: 'Ollama (locale)', provider: 'openai', base: 'http://localhost:11434/v1', model: 'llama3.2', key: false,
@@ -87,9 +87,33 @@ export async function listModels(ai) {
 }
 
 // Streams the answer, calling onText(fullTextSoFar) as tokens arrive. Resolves with the final text.
-export async function complete(ai, system, user, onText, signal, onProgress) {
+// Repainting on every token keeps the main thread (and a phone's GPU) busy: at most ~8 updates/s.
+function throttle(fn, ms = 120) {
+	if (!fn) return null;
+	let last = 0, timer = null, pending;
+	const out = (v) => {
+		pending = v;
+		const now = Date.now();
+		if (now - last >= ms) { last = now; fn(v); return; }
+		clearTimeout(timer);
+		timer = setTimeout(() => { last = Date.now(); fn(pending); }, ms - (now - last));
+	};
+	out.flush = () => { clearTimeout(timer); };
+	return out;
+}
+
+export async function complete(ai, system, user, onText, signal, onProgress, maxTokens) {
+	const paint = throttle(onText);
+	try {
+		return await completeRaw(ai, system, user, paint, signal, onProgress, maxTokens);
+	} finally {
+		paint?.flush();
+	}
+}
+
+async function completeRaw(ai, system, user, onText, signal, onProgress, maxTokens) {
 	if (ai.provider === 'webllm') {
-		const text = await WebLLM.complete(ai.model, system, user, (t) => onText?.(stripThinking(t)), signal, onProgress);
+		const text = await WebLLM.complete(ai.model, system, user, (t) => onText?.(stripThinking(t)), signal, onProgress, maxTokens);
 		return stripThinking(text).trim();
 	}
 	const anthropic = ai.provider === 'anthropic';

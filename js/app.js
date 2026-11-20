@@ -458,7 +458,7 @@ function setupTldr(item, src, text) {
 				if (out.isConnected) out.innerHTML = AI.renderMarkdown(t) || '<p class="cursor"></p>';
 			}, ctrl.signal, (pr) => {
 				if (out.isConnected) out.innerHTML = `<p class="help" style="margin:0">${esc(progressText(pr))}</p>`;
-			});
+			}, WebLLM.TLDR_MAX_TOKENS);
 			if (res) tldrCache.set(item.id, res);
 			if (out.isConnected) out.innerHTML = AI.renderMarkdown(res);
 		} catch (e) {
@@ -534,7 +534,7 @@ function renderRecap() {
 				if (out.isConnected) out.innerHTML = AI.renderMarkdown(t) + '<span class="cursor"></span>';
 			}, ctrl.signal, (pr) => {
 				if (out.isConnected) out.innerHTML = `<p class="help">${esc(progressText(pr))}</p>`;
-			});
+			}, device ? WebLLM.RECAP_LIMIT.maxTokens : undefined);
 			if (res) recapCache.set(key, res);
 			if (out.isConnected) out.innerHTML = AI.renderMarkdown(res);
 		} catch (e) {

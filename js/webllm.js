@@ -1,18 +1,31 @@
 // Optional on-device AI with WebLLM (WebGPU). Nothing here is downloaded unless the user
-// turns it on: the library comes from a pinned CDN build, the model weights from Hugging Face,
-// and both are then cached by the browser. Inference runs in a Web Worker, fully offline.
+// turns it on. Three downloads, all cached by the browser afterwards:
+//   - the WebLLM library: cdn.jsdelivr.net (pinned version)
+//   - the model weights: huggingface.co/mlc-ai
+//   - the compiled GPU kernels: raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs
+// Inference then runs in a Web Worker, fully offline; nothing about the news is ever sent.
 
 export const LIB = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.87/+esm';
 
 export const MODELS = [
-	{ id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 · 1,5 miliardi', size: '≈ 1 GB', note: 'consigliato: il migliore in italiano tra i piccoli' },
-	{ id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 · 1 miliardo', size: '≈ 700 MB', note: 'veloce, italiano discreto' },
-	{ id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 · 0,5 miliardi', size: '≈ 400 MB', note: 'leggerissimo, per telefoni con poca memoria' },
+	{ id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 · 1,5 miliardi', size: '≈ 1 GB', note: 'il migliore in italiano; consigliato su PC' },
+	{ id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 · 1 miliardo', size: '≈ 700 MB', note: 'consigliato su telefono: buon equilibrio tra velocità e qualità' },
+	{ id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 · 0,5 miliardi', size: '≈ 400 MB', note: 'il più leggero, per telefoni con poca memoria' },
 	{ id: 'gemma-2-2b-it-q4f16_1-MLC', label: 'Gemma 2 · 2 miliardi', size: '≈ 1,4 GB', note: 'più qualità, più lento; per PC o telefoni recenti' }
 ];
 
 // Recap prompts must fit the model's 4096-token context.
-export const RECAP_LIMIT = { items: 35, desc: 90 };
+export const RECAP_LIMIT = { items: 25, desc: 80, maxTokens: 600 };
+export const TLDR_MAX_TOKENS = 220;
+
+// Free the GPU memory (1-2 GB) shortly after the last use, so the phone stays responsive.
+const IDLE_UNLOAD_MS = 90 * 1000;
+let idleTimer = null;
+let busy = 0;
+function scheduleUnload() {
+	clearTimeout(idleTimer);
+	idleTimer = setTimeout(() => { if (!busy) unload(); }, IDLE_UNLOAD_MS);
+}
 
 let libPromise = null;
 let engine = null;       // { id, promise }
@@ -57,7 +70,10 @@ export async function remove(id) {
 export async function unload() {
 	const e = engine;
 	engine = null;
-	if (e) try { (await e.promise).unload(); } catch {}
+	clearTimeout(idleTimer);
+	if (!e) return;
+	try { await (await e.promise).unload(); } catch {}
+	e.worker?.terminate();
 }
 
 const listeners = new Set();
@@ -73,6 +89,7 @@ export async function load(id, onProgress) {
 			const worker = new Worker(new URL('./webllm-worker.js', import.meta.url), { type: 'module' });
 			engine = {
 				id: real,
+				worker,
 				promise: w.CreateWebWorkerMLCEngine(worker, real, {
 					initProgressCallback: (r) => { for (const l of listeners) l(r); }
 				}).catch((e) => { engine = null; worker.terminate(); throw e; })
@@ -84,17 +101,20 @@ export async function load(id, onProgress) {
 	}
 }
 
-export async function complete(id, system, user, onText, signal, onProgress) {
-	const eng = await load(id, onProgress);
-	if (signal?.aborted) throw new DOMException('Annullato', 'AbortError');
-	const stop = () => eng.interruptGenerate();
-	signal?.addEventListener('abort', stop, { once: true });
+export async function complete(id, system, user, onText, signal, onProgress, maxTokens = 600) {
+	busy++;
+	clearTimeout(idleTimer);
+	let stop = null;
 	try {
+		const eng = await load(id, onProgress);
+		if (signal?.aborted) throw new DOMException('Annullato', 'AbortError');
+		stop = () => eng.interruptGenerate();
+		signal?.addEventListener('abort', stop, { once: true });
 		const chunks = await eng.chat.completions.create({
 			messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
 			stream: true,
 			temperature: 0.3,
-			max_tokens: 900
+			max_tokens: maxTokens
 		});
 		let text = '';
 		for await (const c of chunks) {
@@ -104,6 +124,8 @@ export async function complete(id, system, user, onText, signal, onProgress) {
 		if (signal?.aborted) throw new DOMException('Annullato', 'AbortError');
 		return text.trim();
 	} finally {
-		signal?.removeEventListener('abort', stop);
+		if (stop) signal?.removeEventListener('abort', stop);
+		busy--;
+		scheduleUnload();
 	}
 }
