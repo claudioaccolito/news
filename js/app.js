@@ -234,6 +234,29 @@ async function longText(item) {
 	return (await state.shards.get(shard))[item.id] || '';
 }
 
+/* ---------- Freshness ---------- */
+
+// The news are collected on GitHub about every 30 minutes; the app can only fetch the latest batch.
+function collectedLabel() {
+	const at = state.news?.at;
+	if (!at) return state.news?.offline ? 'Offline' : '';
+	const mins = Math.round((Date.now() - at) / 60000);
+	if (mins < 1) return 'Raccolte ora';
+	if (mins < 60) return `Raccolte ${mins} min fa`;
+	return `Raccolte ${fmtShort(at)}`;
+}
+
+async function checkForNews() {
+	const before = state.news?.at || 0;
+	const seen = new Set(selectedItems().map((it) => it.id));
+	await loadNews(true);
+	if (state.news?.offline && !state.news.items.length) return toast('Sei offline');
+	const fresh = selectedItems().filter((it) => !seen.has(it.id)).length;
+	if (state.news.at > before && fresh) toast(fresh === 1 ? '1 notizia nuova' : `${fresh} notizie nuove`);
+	else if (state.news.at > before) toast('Nessuna notizia nuova dalle tue fonti');
+	else toast('Sei già aggiornato: nuove notizie circa ogni mezz\'ora');
+}
+
 /* ---------- Views ---------- */
 
 function setNav(route) {
@@ -292,7 +315,7 @@ function renderList() {
 					<option value="">Tutte le fonti</option>
 					${srcs.map((s) => `<option value="${s.id}" ${state.filter.src === s.id ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
 				</select>
-				<span>${at ? `Aggiornato ${fmtShort(at)}` : state.news?.offline ? 'Offline' : ''} · <button class="linkbtn" id="refresh">aggiorna</button></span>
+				<span class="fresh">${esc(collectedLabel())}<button class="icon-btn" id="refresh" aria-label="Cerca notizie nuove" title="Cerca notizie nuove">${icon('refresh', 16)}</button></span>
 			</div>
 		</div>
 		<div id="items"></div>
@@ -320,10 +343,13 @@ function renderList() {
 	}
 	$('#src').addEventListener('change', (e) => { state.filter.src = e.target.value; state.limit = PAGE; renderItems(); });
 	$('#refresh').addEventListener('click', async (e) => {
-		e.target.textContent = 'aggiornamento…';
-		await loadNews(true);
+		const btn = e.currentTarget;
+		btn.classList.add('spin');
+		btn.disabled = true;
+		await checkForNews();
+		const y = window.scrollY;
 		renderList();
-		toast(`${selectedItems().length} notizie`);
+		window.scrollTo(0, y);
 	});
 }
 
@@ -857,7 +883,7 @@ function renderSettings() {
 			<h2>Notizie</h2>
 			<div class="card">
 				${row('rss', 'Fonti', `${settings.sel.length} selezionate${customCount ? ` · ${customCount} personali` : ''}`, chevron, 'href="#/fonti"', 'a')}
-				${row('refresh', 'Aggiornamento', state.news?.at ? `${esc(fmtShort(state.news.at))} · ${okCount} fonti attive` : 'Ogni mezz\'ora', '<button class="btn small" id="refresh-now">Aggiorna</button>')}
+				${row('refresh', 'Notizie', state.news?.at ? `${esc(collectedLabel())} · arrivano circa ogni mezz'ora · ${okCount} fonti attive` : 'Arrivano circa ogni mezz\'ora', '<button class="btn small" id="refresh-now">Controlla</button>')}
 			</div>
 
 			<h2>Intelligenza artificiale <span class="h2-note">facoltativa</span></h2>
@@ -930,8 +956,7 @@ function renderSettings() {
 	$('#refresh-now').addEventListener('click', async (e) => {
 		e.target.disabled = true;
 		e.target.textContent = '…';
-		await loadNews(true);
-		toast(`${selectedItems().length} notizie aggiornate`);
+		await checkForNews();
 		const y = window.scrollY;
 		renderSettings();
 		window.scrollTo(0, y);
@@ -1257,6 +1282,11 @@ async function start() {
 	if (settings.onboarded) await state.ready;
 	window.addEventListener('hashchange', route);
 	document.addEventListener('keydown', onKey);
+	// Keep «Raccolte N min fa» truthful while the page stays open.
+	setInterval(() => {
+		const f = document.querySelector('.fresh');
+		if (f?.firstChild?.nodeType === Node.TEXT_NODE) f.firstChild.textContent = collectedLabel();
+	}, 60000);
 	route();
 
 	document.addEventListener('visibilitychange', async () => {
