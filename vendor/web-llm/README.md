@@ -3,7 +3,7 @@
 Copied here so that the on-device AI does not depend on third-party CDNs: only the model weights are downloaded from Hugging Face (huggingface.co/mlc-ai).
 
 - `web-llm.js`: `@mlc-ai/web-llm@0.2.87` (`lib/index.js` from npm), Apache License 2.0, see `LICENSE`. Source: https://github.com/mlc-ai/web-llm
-- `libs/*.wasm`: compiled WebGPU kernels for the four models offered in Edicola (16- and 32-bit variants), from https://github.com/mlc-ai/binary-mlc-llm-libs/tree/main/web-llm-models/v0_2_87/base (Apache License 2.0).
+- `libs/*.wasm`: compiled WebGPU kernels for the five models offered in Edicola (16- and 32-bit variants), from https://github.com/mlc-ai/binary-mlc-llm-libs/tree/main/web-llm-models/v0_2_87/base (Apache License 2.0).
 
 To update: bump the version in `js/webllm.js`, replace `web-llm.js` and download the matching `libs/`.
 
@@ -17,6 +17,8 @@ d42643deeb496d4a3486ddf066fe34efec32a4a51b14443301f8212a5f015642  libs/Llama-3.2
 6ba8b8f85be2e86f7ca16454d199bfc83e672ec010f4f6e265240c22505f5829  libs/Qwen2-0.5B-Instruct-q4f32_1_cs1k-webgpu.wasm
 155ef7359c859f7d646f4c5adc548d779475da3e3196701c7a9d4b82827559a8  libs/Qwen2-1.5B-Instruct-q4f16_1_cs1k-webgpu.wasm
 8e8e617bb765757ab86555705469679880e9636db10c2198d26aa0f3d1ee8e90  libs/Qwen2-1.5B-Instruct-q4f32_1_cs1k-webgpu.wasm
+363f4dbb789f0518e52295d1f4685d2d61feae4ac4e2a6a95621e4af29450bd7  libs/Qwen3-1.7B-q4f16_1_cs1k-webgpu.wasm
+55d24798dbc00bc3ab8a05eb94fb4833d3760c6de911f8f264c3f6e282014fab  libs/Qwen3-1.7B-q4f32_1_cs1k-webgpu.wasm
 7e97bd3ae603ccf45791bd75e9d1fd40a3696ebdf87f75556eee62507279b8f1  libs/gemma-2-2b-it-q4f16_1_cs1k-webgpu.wasm
 bede1fa2f1f4f434f5c7844dd579bd989a8d362253c2d8d12fd25ddf3bc06d14  libs/gemma-2-2b-it-q4f32_1_cs1k-webgpu.wasm
 ```

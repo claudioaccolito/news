@@ -8,15 +8,14 @@ export const LIB = new URL('../vendor/web-llm/web-llm.js', import.meta.url).href
 const LIBS = new URL('../vendor/web-llm/libs/', import.meta.url).href;
 
 export const MODELS = [
-	{ id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 · 1,5 miliardi', size: '≈ 1 GB', note: 'il migliore in italiano; consigliato su PC' },
+	{ id: 'Qwen3-1.7B-q4f16_1-MLC', label: 'Qwen3 · 1,7 miliardi', size: '≈ 1 GB', note: 'il migliore in italiano tra i piccoli; un po\' più lento', thinking: true },
+	{ id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 · 1,5 miliardi', size: '≈ 1 GB', note: 'buono in italiano, più leggero di Qwen3' },
 	{ id: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', label: 'Llama 3.2 · 1 miliardo', size: '≈ 700 MB', note: 'consigliato su telefono: buon equilibrio tra velocità e qualità' },
 	{ id: 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 · 0,5 miliardi', size: '≈ 400 MB', note: 'il più leggero, per telefoni con poca memoria' },
 	{ id: 'gemma-2-2b-it-q4f16_1-MLC', label: 'Gemma 2 · 2 miliardi', size: '≈ 1,4 GB', note: 'più qualità, più lento; per PC o telefoni recenti' }
 ];
 
-// Recap prompts must fit the model's 4096-token context.
-export const RECAP_LIMIT = { items: 25, desc: 80, maxTokens: 600 };
-export const TLDR_MAX_TOKENS = 220;
+// Input and output limits for each kind of model: see LIMITS in ai.js.
 
 // Free the GPU memory (1-2 GB) shortly after the last use, so the phone stays responsive.
 const IDLE_UNLOAD_MS = 90 * 1000;
@@ -131,7 +130,9 @@ export async function complete(id, system, user, onText, signal, onProgress, max
 			messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
 			stream: true,
 			temperature: 0.3,
-			max_tokens: maxTokens
+			max_tokens: maxTokens,
+			// Qwen3 «thinks» before answering by default: much slower, no better for summaries.
+			...(/^Qwen3-/.test(id) ? { extra_body: { enable_thinking: false } } : {})
 		});
 		let text = '';
 		for await (const c of chunks) {

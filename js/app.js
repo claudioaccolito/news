@@ -189,7 +189,11 @@ async function fetchArticle(url) {
 			const res = await fetch(u, { signal: ctrl.signal, credentials: 'omit', referrerPolicy: 'no-referrer' });
 			clearTimeout(timer);
 			if (!res.ok || !/html/i.test(res.headers.get('content-type') || 'text/html')) continue;
-			const text = extractArticle(await res.text());
+			const size = Number(res.headers.get('content-length') || 0);
+			if (size > 3e6) continue; // more than 3 MB: not a normal article page
+			let html = await res.text();
+			if (html.length > 3e6) html = html.slice(0, 3e6);
+			const text = extractArticle(html).slice(0, 100000);
 			if (text) return text;
 		} catch {}
 	}
@@ -576,6 +580,16 @@ function aiHost() {
 }
 
 // Summaries are only ever made on request: nothing runs when an article opens.
+// Keeps the beginning of a long text (the most informative part of a news article),
+// cut at a paragraph or sentence boundary.
+function clip(text, max) {
+	if (text.length <= max) return { text, clipped: false };
+	let cut = text.slice(0, max);
+	const at = Math.max(cut.lastIndexOf('\n\n'), cut.lastIndexOf('. '));
+	if (at > max * 0.6) cut = cut.slice(0, at + 1);
+	return { text: cut.trim(), clipped: true };
+}
+
 function setupTldr(item, src, text) {
 	const go = $('#tldr-go');
 	const box = $('#tldr');
@@ -587,12 +601,12 @@ function setupTldr(item, src, text) {
 	let host = '';
 	try { host = new URL(item.u).hostname.replace(/^www\./, ''); } catch {}
 
-	const footer = (full) => `<p class="ai-source">${full
-		? `${icon('check', 14)} Riassunto dell'articolo completo, letto da ${esc(host || src.name)}.`
+	const footer = (full, clipped) => `<p class="ai-source">${full
+		? `${icon('check', 14)} Riassunto ${clipped ? `della prima parte dell'articolo (circa ${Math.round(clipped / 6)} parole), letta` : "dell'articolo completo, letto"} da ${esc(host || src.name)}.`
 		: `${icon('info', 14)} Riassunto dell'estratto: ${esc(host || src.name)} non permette di leggere l'articolo completo da qui.`}${local ? '' : ` Generato da ${esc(aiHost())}.`}</p>`;
 	const show = (cached) => {
 		const c = typeof cached === 'string' ? { t: cached, f: false } : cached;
-		out.innerHTML = AI.renderMarkdown(c.t) + footer(c.f);
+		out.innerHTML = AI.renderMarkdown(c.t) + footer(c.f, c.k);
 	};
 
 	const run = async () => {
@@ -606,15 +620,17 @@ function setupTldr(item, src, text) {
 			ui.say(`Leggo l'articolo da ${host || src.name}…`);
 			const full = await fetchArticle(item.u);
 			if (ctrl.signal.aborted) throw new DOMException('Annullato', 'AbortError');
-			const body = full || text || item.d || '';
+			const lim = AI.limitsFor(settings.ai);
+			const { text: body, clipped } = clip(full || text || item.d || '', lim.articleChars);
 			if (settings.ai.provider === 'webllm') ui.say('Preparo il modello…'); else ui.reading();
-			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.tldrPrompt(item, src.name, settings.ai.provider === 'webllm' ? body.slice(0, 6000) : body), (t) => {
+			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.tldrPrompt(item, src.name, body), (t) => {
 				ui.writing(t);
 				if (out.isConnected) out.innerHTML = AI.streamMarkdown(t);
-			}, ctrl.signal, (pr) => ui.loading(pr), WebLLM.TLDR_MAX_TOKENS);
+			}, ctrl.signal, (pr) => ui.loading(pr), lim.tldrTokens);
 			ui.done();
-			if (res) tldrCache.set(item.id, { t: res, f: !!full });
-			if (out.isConnected) show({ t: res, f: !!full });
+			const k = clipped ? body.length : 0;
+			if (res) tldrCache.set(item.id, { t: res, f: !!full, k });
+			if (out.isConnected) show({ t: res, f: !!full, k });
 		} catch (e) {
 			ui.done();
 			if (!out.isConnected) return;
@@ -674,7 +690,7 @@ function renderRecap() {
 	const label = filterLabel();
 	const items = recapItems();
 	const device = settings.ai.provider === 'webllm';
-	const max = device ? WebLLM.RECAP_LIMIT.items : Math.max(10, Number(settings.ai.maxItems) || 60);
+	const max = Math.min(AI.limitsFor(settings.ai).recapItems, Math.max(10, Number(settings.ai.maxItems) || 60));
 	const used = items.slice(0, max);
 	const key = `${new Date().toDateString()}|${state.filter.cat}|${state.filter.src}|${norm(state.filter.q)}`;
 	const cached = recapCache.get(key);
@@ -750,14 +766,14 @@ async function recapAtOnce(used, label, signal, status, out, onStart) {
 	ui.reading();
 	const lines = used.map((it) => {
 		const s = state.sources.get(it.s);
-		return `- ${it.t} (${s?.name || it.s})${it.d ? ': ' + truncate(it.d, 160) : ''}`;
+		return `- ${truncate(it.t, 200)} (${s?.name || it.s})${it.d ? ': ' + truncate(it.d, AI.LIMITS.online.descChars) : ''}`;
 	});
 	try {
 		return await AI.complete(settings.ai, AI.SYSTEM, AI.recapPrompt(lines, filterLabel()), (t) => {
 			onStart();
 			ui.writing(t);
 			if (out.isConnected) out.innerHTML = AI.streamMarkdown(t);
-		}, signal);
+		}, signal, undefined, AI.LIMITS.online.recapTokens);
 	} finally {
 		ui.done();
 	}
@@ -766,8 +782,9 @@ async function recapAtOnce(used, label, signal, status, out, onStart) {
 // Local models: one short request per topic, assembled here. Real progress: topic k of n.
 async function recapByTopic(items, signal, status, out, onStart) {
 	const device = settings.ai.provider === 'webllm';
-	const perTopic = device ? 6 : 8;
-	const maxTopics = device ? 5 : 8;
+	const lim = AI.limitsFor(settings.ai);
+	const perTopic = lim.perTopic;
+	const maxTopics = lim.topics;
 	const groups = new Map();
 	for (const it of items) {
 		const cat = state.sources.get(it.s)?.cat || 'altro';
@@ -781,7 +798,7 @@ async function recapByTopic(items, signal, status, out, onStart) {
 	for (let k = 0; k < topics.length; k++) {
 		const [cat, list] = topics[k];
 		const name = state.cats.get(cat)?.name || 'Altro';
-		const lines = list.map((it, i) => `${i + 1}. ${it.t}${it.d ? ' — ' + truncate(it.d, device ? 90 : 160) : ''}`);
+		const lines = list.map((it, i) => `${i + 1}. ${truncate(it.t, 200)}${it.d ? ' — ' + truncate(it.d, lim.descChars) : ''}`);
 		const head = `### ${name}\n`;
 		const base = k / topics.length;
 		const show = (pct, text) => {
@@ -795,7 +812,7 @@ async function recapByTopic(items, signal, status, out, onStart) {
 			if (out.isConnected) out.innerHTML = AI.streamMarkdown(md + head + t);
 		}, signal, (pr) => {
 			if ((pr.progress || 0) < 1 && status.isConnected) status.innerHTML = statusHTML(progressText(pr), pr.progress || 0);
-		}, device ? 260 : 400);
+		}, lim.topicTokens);
 		const bullets = AI.cleanBullets(res);
 		if (bullets.length) md += `${head}${bullets.join('\n')}\n\n`;
 		if (out.isConnected) out.innerHTML = AI.renderMarkdown(md);
@@ -1270,7 +1287,7 @@ function renderSettings() {
 					<details class="adv">
 						<summary>Opzioni avanzate</summary>
 						${custom ? '' : `<label class="field"><span>Indirizzo</span><input class="input" id="base" value="${esc(ai.base)}" inputmode="url" autocomplete="off"></label>`}
-						<label class="field"><span>Notizie nel riassunto del giorno</span><input class="input" id="max" type="number" min="10" max="400" step="10" value="${esc(ai.maxItems)}" style="max-width:8rem"></label>
+						<label class="field"><span>Notizie nel riassunto del giorno</span><input class="input" id="max" type="number" min="10" max="150" step="10" value="${esc(ai.maxItems)}" style="max-width:8rem"></label>
 						<p class="help">I modelli piccoli hanno poca memoria: se il riassunto si interrompe, abbassa questo numero.</p>
 					</details>
 				</div>`;
@@ -1287,7 +1304,7 @@ function renderSettings() {
 				if ($('#base')) ai.base = val('base');
 				if ($('#model')) ai.model = val('model');
 				if ($('#key')) ai.key = val('key');
-				if ($('#max')) ai.maxItems = Math.max(10, Math.min(400, Number(val('max')) || 60));
+				if ($('#max')) ai.maxItems = Math.max(10, Math.min(150, Number(val('max')) || 60));
 			}
 			save();
 			setNav('/impostazioni');

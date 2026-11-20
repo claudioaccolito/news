@@ -5,7 +5,7 @@ import * as WebLLM from './webllm.js';
 
 export const PRESETS = {
 	device: {
-		label: 'Nel dispositivo (WebLLM, sperimentale)', provider: 'webllm', base: '', model: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', key: false,
+		label: 'Nel dispositivo (WebLLM, sperimentale)', provider: 'webllm', base: '', model: 'Llama-3.2-1B-Instruct-q4f16_1-MLC', key: false,
 		help: 'Il modello gira dentro il browser con la GPU del dispositivo (WebGPU), anche offline: nulla esce dal telefono o dal PC. Si scarica una volta e resta salvato; dopo un minuto e mezzo di inattività viene tolto dalla memoria.'
 
 	},
@@ -38,6 +38,15 @@ export const PRESETS = {
 		help: 'Qualsiasi servizio che espone <code>/chat/completions</code> (Groq, Mistral, Together, un server tuo…).'
 	}
 };
+
+// Hard limits on what goes in and out of the model, so a 90-page article or a day with
+// 500 news never overloads the device. Characters ≈ 3.5 per token in Italian.
+export const LIMITS = {
+	webllm: { articleChars: 4500, topics: 5, perTopic: 6, descChars: 90, tldrTokens: 220, topicTokens: 260, recapItems: 30, recapTokens: 600 },
+	local: { articleChars: 12000, topics: 8, perTopic: 8, descChars: 160, tldrTokens: 400, topicTokens: 400, recapItems: 64, recapTokens: 1200 },
+	online: { articleChars: 30000, topics: 0, perTopic: 0, descChars: 160, tldrTokens: 500, topicTokens: 500, recapItems: 150, recapTokens: 1500 }
+};
+export const limitsFor = (ai) => LIMITS[ai.provider === 'webllm' ? 'webllm' : isLocal(ai) ? 'local' : 'online'];
 
 export const isEnabled = (ai) => ai.provider === 'webllm' ? !!ai.model : ai.provider !== 'none' && !!ai.base;
 export const isLocal = (ai) => ai.provider === 'webllm' || /localhost|127\.0\.0\.1|\[::1\]/.test(ai.base);
@@ -120,8 +129,8 @@ async function completeRaw(ai, system, user, onText, signal, onProgress, maxToke
 	const anthropic = ai.provider === 'anthropic';
 	const url = anthropic ? `${trimSlash(ai.base)}/v1/messages` : `${trimSlash(ai.base)}/chat/completions`;
 	const body = anthropic
-		? { model: ai.model, max_tokens: 2048, system, messages: [{ role: 'user', content: user }], stream: true }
-		: { model: ai.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], stream: true, temperature: 0.3 };
+		? { model: ai.model, max_tokens: maxTokens || 1500, system, messages: [{ role: 'user', content: user }], stream: true }
+		: { model: ai.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], stream: true, temperature: 0.3, max_tokens: maxTokens || 1500 };
 
 	let res;
 	try {
@@ -176,7 +185,7 @@ Fonte: ${sourceName}
 Data: ${new Date(item.p).toLocaleString('it-IT')}
 
 Testo:
-${(text || item.d || '').slice(0, 12000)}`;
+${text || item.d || ''}`;
 }
 
 // One prompt for capable models (online services).

@@ -56,4 +56,13 @@ Impostazioni → Intelligenza artificiale → *Nel dispositivo*. Serve un browse
 - La libreria WebLLM e i programmi per la GPU sono inclusi nel repo (`vendor/web-llm`, Apache 2.0, con hash SHA-256 nel README della cartella).
 - Solo i pesi del modello (400 MB – 1,4 GB) si scaricano una volta da Hugging Face (`huggingface.co/mlc-ai`) e restano nella cache del browser; da lì in poi funziona anche offline.
 - I riassunti partono solo su richiesta (il link «Riassumi» in fondo all'articolo, o la pagina Riassunto). Mentre lavora il modello impegna molto la GPU: il dispositivo può rallentare finché non ha finito. Dopo 90 secondi di inattività viene tolto dalla memoria.
-- Su telefono è consigliato Llama 3.2 1B; su PC Qwen 2.5 1,5B.
+- Modelli: Qwen3 1,7B (il migliore in italiano, ragionamento interno disattivato), Qwen 2.5 1,5B, Llama 3.2 1B (il più veloce su telefono), Qwen 2.5 0,5B, Gemma 2 2B.
+- Limiti fissi (`LIMITS` in `js/ai.js`), per non sovraccaricare il dispositivo:
+
+  | | Testo di un articolo | Riassunto del giorno | Lunghezza della risposta |
+  |---|---|---|---|
+  | Nel dispositivo | ~4.500 caratteri (circa 750 parole) | 5 argomenti × 6 notizie | 220 token (articolo), 260 per argomento |
+  | Sul computer | ~12.000 caratteri | 8 argomenti × 8 notizie | 400 token |
+  | Servizio online | ~30.000 caratteri | 150 notizie | 500 / 1.500 token |
+
+  Di un articolo lungo si riassume l'inizio (la parte più informativa) e la nota sotto il riassunto lo dice. Pagine oltre 3 MB non vengono nemmeno lette.
