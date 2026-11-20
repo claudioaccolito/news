@@ -687,7 +687,7 @@ function renderRecap() {
 	view.innerHTML = `
 		<section class="page recap">
 			<h1>Il riassunto <em>di oggi</em></h1>
-			<p class="lede">${new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}${label ? ` · ${esc(label)}` : ''} · ${items.length} notizie${items.length > used.length ? `, le ${used.length} più recenti` : ''}</p>
+			<p class="lede">${new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}${label ? ` · ${esc(label)}` : ''} · ${items.length} notizie${ai && AI.isLocal(settings.ai) ? ', riassunte per argomento' : items.length > used.length ? `, le ${used.length} più recenti` : ''}</p>
 			${!ai ? noticeHTML({ title: 'Serve un modello AI', text: 'Scegli nelle impostazioni un modello nel dispositivo, sul tuo computer o un servizio online.' })
 			: !items.length ? `<div class="empty"><strong>Nessuna notizia di oggi</strong>Con i filtri attuali non c'è nulla da riassumere.</div>`
 			: `<div class="recap-bar">
@@ -718,24 +718,15 @@ function renderRecap() {
 		go.classList.add('stop');
 		go.classList.remove('primary');
 		out.innerHTML = '';
-		const ui = progressUI(status, settings.ai.provider === 'webllm' ? `Modello pronto: leggo ${used.length} notizie` : `${AI.isLocal(settings.ai) ? 'Il modello' : aiHost()} legge ${used.length} notizie`, device ? 220 : 320);
-		if (device) ui.say('Preparo il modello…'); else ui.reading();
-		const lines = used.map((it) => {
-			const s = state.sources.get(it.s);
-			return `- [${s?.name || it.s}] ${it.t}${it.d ? ' — ' + truncate(it.d, device ? WebLLM.RECAP_LIMIT.desc : 160) : ''}`;
-		});
+		const local = AI.isLocal(settings.ai);
 		let started = false;
 		try {
-			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.recapPrompt(lines, label), (t) => {
-				started = true;
-				ui.writing(t);
-				if (out.isConnected) out.innerHTML = AI.streamMarkdown(t);
-			}, ctrl.signal, (pr) => ui.loading(pr), device ? WebLLM.RECAP_LIMIT.maxTokens : undefined);
-			ui.done();
+			const res = local ? await recapByTopic(items, ctrl.signal, status, out, () => { started = true; })
+				: await recapAtOnce(used, label, ctrl.signal, status, out, () => { started = true; });
 			if (res) recapCache.set(key, res);
 			if (out.isConnected) out.innerHTML = AI.renderMarkdown(res);
 		} catch (e) {
-			ui.done();
+			status.innerHTML = '';
 			if (!out.isConnected) return;
 			if (e.name === 'AbortError') {
 				if (!started) out.innerHTML = previous;
@@ -750,6 +741,66 @@ function renderRecap() {
 			go.innerHTML = genLabel(!!out.textContent.trim());
 		}
 	});
+}
+
+// Capable online models: one request with all the news.
+async function recapAtOnce(used, label, signal, status, out, onStart) {
+	const ui = progressUI(status, `${aiHost()} legge ${used.length} notizie`, 320);
+	ui.reading();
+	const lines = used.map((it) => {
+		const s = state.sources.get(it.s);
+		return `- ${it.t} (${s?.name || it.s})${it.d ? ': ' + truncate(it.d, 160) : ''}`;
+	});
+	try {
+		return await AI.complete(settings.ai, AI.SYSTEM, AI.recapPrompt(lines, filterLabel()), (t) => {
+			onStart();
+			ui.writing(t);
+			if (out.isConnected) out.innerHTML = AI.streamMarkdown(t);
+		}, signal);
+	} finally {
+		ui.done();
+	}
+}
+
+// Local models: one short request per topic, assembled here. Real progress: topic k of n.
+async function recapByTopic(items, signal, status, out, onStart) {
+	const device = settings.ai.provider === 'webllm';
+	const perTopic = device ? 6 : 8;
+	const maxTopics = device ? 5 : 8;
+	const groups = new Map();
+	for (const it of items) {
+		const cat = state.sources.get(it.s)?.cat || 'altro';
+		if (!groups.has(cat)) groups.set(cat, []);
+		const list = groups.get(cat);
+		if (list.length < perTopic) list.push(it);
+	}
+	const topics = [...groups.entries()].sort((a, b) => b[1].length - a[1].length).slice(0, maxTopics);
+	let md = '';
+	if (device) status.innerHTML = statusHTML('Preparo il modello…');
+	for (let k = 0; k < topics.length; k++) {
+		const [cat, list] = topics[k];
+		const name = state.cats.get(cat)?.name || 'Altro';
+		const lines = list.map((it, i) => `${i + 1}. ${it.t}${it.d ? ' — ' + truncate(it.d, device ? 90 : 160) : ''}`);
+		const head = `### ${name}\n`;
+		const base = k / topics.length;
+		const show = (pct, text) => {
+			if (status.isConnected) status.innerHTML = statusHTML(`${name} · ${k + 1} di ${topics.length} · ${Math.min(99, Math.round(pct * 100))}%`, pct) ;
+		};
+		show(base);
+		const res = await AI.complete(settings.ai, AI.SYSTEM, AI.topicPrompt(name, lines), (t) => {
+			onStart();
+			const words = t.split(/\s+/).filter(Boolean).length;
+			show(base + Math.min(0.95, words / 60) / topics.length);
+			if (out.isConnected) out.innerHTML = AI.streamMarkdown(md + head + t);
+		}, signal, (pr) => {
+			if ((pr.progress || 0) < 1 && status.isConnected) status.innerHTML = statusHTML(progressText(pr), pr.progress || 0);
+		}, device ? 260 : 400);
+		const bullets = AI.cleanBullets(res);
+		if (bullets.length) md += `${head}${bullets.join('\n')}\n\n`;
+		if (out.isConnected) out.innerHTML = AI.renderMarkdown(md);
+	}
+	if (status.isConnected) status.innerHTML = '';
+	return md.trim();
 }
 
 /* ---------- Sources ---------- */

@@ -179,17 +179,55 @@ Testo:
 ${(text || item.d || '').slice(0, 12000)}`;
 }
 
+// One prompt for capable models (online services).
 export function recapPrompt(lines, label) {
-	return `Queste sono le notizie di oggi${label ? ` (${label})` : ''}: titolo, fonte e, quando c'è, una breve descrizione.
+	return `Queste sono le notizie di oggi${label ? ` (${label})` : ''}. Ogni riga: titolo (fonte) e, se c'è, una breve descrizione.
 
 ${lines.join('\n')}
 
-Scrivi un resoconto in italiano della giornata.
-- Raggruppa le notizie per tema; ogni tema ha un titoletto preceduto da "### ".
-- Sotto ogni tema 2-5 punti elenco brevi; metti in **grassetto** il fatto principale di ogni punto.
-- Unisci le notizie duplicate tra fonti diverse.
+Scrivi in italiano un resoconto della giornata.
+- Raggruppa le notizie per tema. Ogni tema ha un titolo breve preceduto da "### " (per esempio "### Politica").
+- Sotto ogni tema scrivi da 2 a 5 punti elenco che iniziano con "- ". Ogni punto è una frase sola, riformulata con parole tue, senza copiare il titolo.
+- Metti in **grassetto** solo le 2-4 parole chiave di ogni punto.
+- Unisci in un solo punto le notizie sullo stesso fatto. Non scrivere i nomi delle fonti.
 - Ordina i temi per importanza.
 - Chiudi con una riga che inizia con "**In breve:**" e una o due frasi sul quadro generale.`;
+}
+
+// Small local models do much better with one short task at a time: one topic per request,
+// a concrete example of the format, and nothing to copy.
+export function topicPrompt(topic, lines) {
+	return `Notizie di oggi su ${topic}:
+
+${lines.join('\n')}
+
+Scrivi da 2 a 4 punti elenco in italiano che riassumono queste notizie.
+Regole:
+- ogni punto inizia con "- " ed è una sola frase di massimo 25 parole;
+- se più notizie parlano dello stesso fatto, uniscile in un solo punto;
+- riformula con parole tue: non copiare i titoli, non scrivere numeri, titoli o nomi delle fonti;
+- scrivi solo i punti elenco, nient'altro.
+
+Esempio di risposta:
+- Il governo ha approvato la manovra, che ora passa al Parlamento.
+- La Banca centrale europea lascia fermi i tassi ma apre a un taglio a gennaio.`;
+}
+
+// Keeps only the bullet lines of a small model's answer, without leftover labels or numbering.
+export function cleanBullets(text, max = 4) {
+	return text.split('\n')
+		.map((l) => l.trim())
+		.filter((l) => /^[-*•]\s+\S/.test(l))
+		.map((l) => l
+			.replace(/^[-*•]\s+/, '')
+			.replace(/^\d+[.)]\s*/, '')
+			.replace(/^\*\*[^*]{1,40}:\*\*\s*/, '')
+			.replace(/^(fatto principale|notizia|titolo|fonte|preceduto|riassunto|sintesi)\s*:\s*/i, '')
+			.replace(/#+/g, '')
+			.trim())
+		.filter((l) => l.length > 12)
+		.map((l) => '- ' + l)
+		.slice(0, max);
 }
 
 // Minimal, safe Markdown for model output.
