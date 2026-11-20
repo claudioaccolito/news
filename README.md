@@ -4,7 +4,7 @@ Un lettore di notizie **solo testo**, installabile come PWA, senza account e sen
 
 **Apri:** https://claudioaccolito.github.io/news/
 
-- Al primo avvio scegli gli argomenti: Edicola propone le fonti giuste tra quasi 200 testate italiane e internazionali in 17 categorie.
+- Al primo avvio scegli gli argomenti: Edicola propone le fonti giuste tra oltre 160 testate e blog italiani e internazionali in 17 categorie.
 - Notizie dalla più recente, con fonte e data; filtri per categoria e fonte, ricerca istantanea.
 - Tocca una notizia per leggerla: titolo, autore, data e testo (quando la fonte lo pubblica nel feed), con il pulsante per aprire l'originale.
 - Aggiungi qualsiasi feed RSS o Atom (blog, ricerche su Hacker News…).

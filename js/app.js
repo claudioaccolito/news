@@ -690,7 +690,7 @@ function renderWelcome() {
 	view.innerHTML = `
 		<section class="page">
 			<h1>Benvenuto in <em>Edicola</em></h1>
-			<p class="lede">Notizie da centinaia di fonti, solo testo, dalla più recente. Niente account, niente pubblicità, niente tracciamento: le tue scelte restano su questo dispositivo.</p>
+			<p class="lede">Notizie da oltre 160 fonti, solo testo, dalla più recente. Niente account, niente pubblicità, niente tracciamento: le tue scelte restano su questo dispositivo.</p>
 			<h2>Quali argomenti ti interessano?</h2>
 			<div class="tiles">
 				${state.catalog.categories.map((c) => {
