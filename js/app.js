@@ -92,6 +92,23 @@ function highlight(text, terms) {
 	return res + out.slice(pos);
 }
 
+/* ---------- Look ---------- */
+
+function applyLook() {
+	const root = document.documentElement;
+	root.dataset.style = settings.style || 'quotidiano';
+	if (settings.theme === 'auto') delete root.dataset.theme;
+	else root.dataset.theme = settings.theme;
+	// Browser chrome follows the page background.
+	requestAnimationFrame(() => {
+		const bg = getComputedStyle(root).getPropertyValue('--bg').trim();
+		document.querySelector('meta[name="theme-color"]')?.setAttribute('content', bg);
+	});
+}
+
+applyLook();
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', applyLook);
+
 /* ---------- Data ---------- */
 
 async function loadCatalog() {
@@ -260,6 +277,7 @@ function renderList() {
 			</dl>
 		</aside>
 		<div class="main">
+		<p class="dateline">${esc(new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }))} · ${settings.sel.length} fonti</p>
 		<div class="tools">
 			<label class="search">
 				<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M15.5 15.5 20 20" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
@@ -767,7 +785,12 @@ function renderSettings() {
 			<p class="lede">Tutto resta su questo dispositivo.</p>
 
 			<h2>Lettura</h2>
-			<div class="field"><span>Tema</span>${seg('theme', settings.theme, [['auto', 'Automatico'], ['light', 'Chiaro'], ['dark', 'Scuro']])}</div>
+			<div class="field"><span>Stile</span>
+				<div class="looks">
+					${[['quotidiano', 'Quotidiano', 'Carta, inchiostro e rosso. Newsreader.'], ['moderno', 'Moderno', 'Grigi, blu e schede. Inter.'], ['notte', 'Notte', 'Blu notte e ambra. Literata.']].map(([k, l, d]) => `<button class="look" data-look="${k}" aria-pressed="${settings.style === k}"><span class="look-swatch look-${k}" aria-hidden="true"><i></i><i></i><i></i></span><span class="look-name">${l}</span><span class="look-desc">${d}</span></button>`).join('')}
+				</div>
+			</div>
+			<div class="field"><span>Chiaro o scuro</span>${seg('theme', settings.theme, [['auto', 'Automatico'], ['light', 'Chiaro'], ['dark', 'Scuro']])}</div>
 			<div class="field"><span>Dimensione del testo</span>${seg('size', settings.size, [['s', 'Piccolo'], ['m', 'Normale'], ['l', 'Grande'], ['xl', 'Molto grande']])}</div>
 
 			<h2>Intelligenza artificiale (facoltativa)</h2>
@@ -828,9 +851,16 @@ function renderSettings() {
 		b.addEventListener('click', () => {
 			settings.theme = b.dataset.theme;
 			save();
-			if (settings.theme === 'auto') delete document.documentElement.dataset.theme;
-			else document.documentElement.dataset.theme = settings.theme;
+			applyLook();
 			for (const o of $$('[data-theme]')) o.setAttribute('aria-pressed', o === b);
+		});
+	}
+	for (const b of $$('[data-look]')) {
+		b.addEventListener('click', () => {
+			settings.style = b.dataset.look;
+			save();
+			applyLook();
+			for (const o of $$('[data-look]')) o.setAttribute('aria-pressed', o === b);
 		});
 	}
 	for (const b of $$('[data-size]')) {

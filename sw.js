@@ -17,7 +17,8 @@ const SHELL_FILES = [
 	'js/webllm-worker.js',
 	'manifest.webmanifest',
 	'icons/icon.svg',
-	'icons/icon-192.png'
+	'icons/icon-192.png',
+	'fonts/inter.woff2'
 ];
 
 self.addEventListener('install', (e) => {

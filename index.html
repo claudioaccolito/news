@@ -4,8 +4,7 @@
 	<meta charset="UTF-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 	<meta name="description" content="Edicola: le tue notizie da centinaia di fonti, solo testo, senza account e senza tracciamento.">
-	<meta name="theme-color" content="#f7f4ee" media="(prefers-color-scheme: light)">
-	<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">
+	<meta name="theme-color" content="#fbfaf7">
 	<meta name="referrer" content="no-referrer">
 	<title>Edicola</title>
 	<link rel="manifest" href="manifest.webmanifest">
@@ -16,10 +15,12 @@
 		// Apply theme and text size before first paint.
 		try {
 			const s = JSON.parse(localStorage.getItem('edicola:v1') || '{}');
+			document.documentElement.dataset.style = s.style || 'quotidiano';
 			if (s.theme && s.theme !== 'auto') document.documentElement.dataset.theme = s.theme;
 			if (s.size) document.documentElement.dataset.size = s.size;
-		} catch {}
+		} catch { document.documentElement.dataset.style = 'quotidiano'; }
 	</script>
+	<link rel="preload" href="fonts/inter.woff2" as="font" type="font/woff2" crossorigin>
 	<script type="module" src="js/app.js"></script>
 </head>
 <body>

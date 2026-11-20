@@ -8,6 +8,7 @@ const DEFAULTS = {
 	onboarded: false,
 	sel: [],          // selected catalog source ids
 	custom: [],       // [{ id, name, url, cat }]
+	style: 'quotidiano', // 'quotidiano' | 'moderno' | 'notte'
 	theme: 'auto',
 	size: 'm',
 	proxy: '',        // optional CORS proxy prefix for custom feeds (off by default)

@@ -9,7 +9,7 @@ Un lettore di notizie **solo testo**, installabile come PWA, senza account e sen
 - Tocca una notizia per leggerla: titolo, autore, data e testo (quando la fonte lo pubblica nel feed), con il pulsante per aprire l'originale.
 - Aggiungi qualsiasi feed RSS o Atom (blog, ricerche su Hacker News…).
 - Facoltativo: un modello AI **nel dispositivo** (WebLLM via WebGPU, anche su telefono), **locale** (Ollama, LM Studio, llama.cpp) o via API (OpenAI, Anthropic, OpenRouter, qualsiasi endpoint compatibile OpenAI), per il riassunto del giorno e un TL;DR in italiano di ogni articolo.
-- Tema chiaro/scuro, dimensione del testo, esporta/importa le impostazioni.
+- Tre stili, ognuno chiaro o scuro: **Quotidiano** (Newsreader, inchiostro e rosso), **Moderno** (Inter, grigi e blu), **Notte** (Literata, blu notte e ambra). Dimensione del testo, esporta/importa le impostazioni.
 - Su PC: barra laterale con gli argomenti e scorciatoie da tastiera (`/` cerca, `j`/`k` scorri, `Invio` apri, `o` apri la fonte, `Esc` indietro).
 
 ## Privacy, costi e manutenzione
@@ -45,6 +45,7 @@ Poi in Edicola: Impostazioni → Intelligenza artificiale → Ollama.
 | `js/feed-parser.js` | Parser RSS/Atom condiviso tra Action e browser |
 | `js/app.js`, `js/store.js`, `js/ai.js` | L'app (JavaScript puro, nessun build) |
 | `sw.js`, `manifest.webmanifest` | PWA e uso offline |
+| `fonts/` | Newsreader, Literata e Inter (SIL Open Font License, vedi `fonts/OFL.txt`), scaricati solo se usati |
 
 Prova in locale: `node scripts/build-news.mjs _site/data`, poi servi la cartella con `data/` da `_site`.
 
