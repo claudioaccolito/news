@@ -422,19 +422,25 @@ async function renderArticle(id) {
 	view.innerHTML = `
 		<article class="article">
 			<div class="article-nav">
-				<button class="back" id="back"><span aria-hidden="true">←</span> Notizie</button>
-				<a class="btn small" href="${esc(item.u)}" target="_blank" rel="noopener noreferrer">Apri la fonte ↗</a>
+				<button class="back" id="back">${icon('back', 18)} Notizie</button>
+				<a class="btn small" href="${esc(item.u)}" target="_blank" rel="noopener noreferrer">Apri la fonte ${icon('external', 15)}</a>
 			</div>
 			<div class="meta"><span class="src">${esc(s.name)}</span>${cat ? `<span class="dot"></span><span>${esc(cat.name)}</span>` : ''}</div>
 			<h1>${esc(item.t)}</h1>
 			<p class="byline">${item.a ? `di <span class="author">${esc(item.a)}</span> · ` : ''}<time datetime="${new Date(item.p).toISOString()}">${esc(fmtLong(item.p))}</time></p>
 			<div class="prose" id="body">${item.d ? `<p class="lead">${esc(item.d)}</p>` : ''}</div>
-			<div class="actions">
-				<a class="btn primary" href="${esc(item.u)}" target="_blank" rel="noopener noreferrer">Leggi su ${esc(host || s.name)} ↗</a>
-				${navigator.share ? '<button class="btn" id="share">Condividi</button>' : '<button class="btn" id="share">Copia link</button>'}
-				${ai ? `<button class="linkbtn tldr-link" id="tldr-go">${icon('sparkle', 15)} Riassumi</button>` : ''}
+			<div class="article-actions">
+				<a class="btn primary wide" href="${esc(item.u)}" target="_blank" rel="noopener noreferrer">Leggi su ${esc(host || s.name)} ${icon('external', 16)}</a>
+				<div class="btn-row">
+					${ai ? `<button class="btn" id="tldr-go">${icon('sparkle', 17)} Riassumi</button>` : ''}
+					<button class="btn" id="share">${icon('share', 17)} ${navigator.share ? 'Condividi' : 'Copia link'}</button>
+				</div>
 			</div>
-			${ai ? `<section class="ai-box" id="tldr" hidden><div class="label"><span>Riassunto</span><button class="linkbtn" id="tldr-close">Chiudi</button></div><div class="ai-out" id="tldr-out"></div></section>` : ''}
+			${ai ? `<section class="ai-box" id="tldr" hidden>
+				<div class="label"><span>${icon('sparkle', 15)} Riassunto</span><button class="icon-btn" id="tldr-close" aria-label="Chiudi il riassunto">${icon('close', 16)}</button></div>
+				<div id="tldr-status"></div>
+				<div class="ai-out" id="tldr-out"></div>
+			</section>` : ''}
 		</article>`;
 
 	$('#back').addEventListener('click', () => {
@@ -468,43 +474,113 @@ function progressText(p) {
 	return pct ? `Preparo il modello… ${pct}%` : 'Preparo il modello…';
 }
 
+// Before using the on-device model: is it supported and already downloaded?
+// Never start a large download by surprise: send the reader to the settings instead.
+async function aiPrecheck() {
+	const ai = settings.ai;
+	if (ai.provider !== 'webllm') return null;
+	const sup = await WebLLM.support();
+	if (!sup.ok) return { title: 'Il modello nel dispositivo non funziona qui', text: sup.why };
+	if (!(await WebLLM.isCached(ai.model))) {
+		const m = WebLLM.MODELS.find((x) => x.id === ai.model);
+		return { title: 'Il modello non è ancora scaricato', text: `${m ? m.label : 'Il modello'} pesa ${m ? m.size : 'qualche centinaio di MB'}: scaricalo una volta dalle impostazioni, meglio con il Wi-Fi.` };
+	}
+	return null;
+}
+
+function noticeHTML(n) {
+	return `<div class="notice">
+		<span class="notice-ic">${icon('info', 18)}</span>
+		<div><strong>${esc(n.title)}</strong><p>${esc(n.text)}</p>
+		<a class="btn small" href="#/impostazioni">${icon('settings', 16)} Apri le impostazioni</a></div>
+	</div>`;
+}
+
+function statusHTML(text, progress) {
+	return `<div class="ai-status" role="status"><span class="spinner" aria-hidden="true"></span><span>${esc(text)}</span></div>${progress != null && progress < 1 ? `<progress max="1" value="${progress}"></progress>` : ''}`;
+}
+
+function aiHost() {
+	return settings.ai.base.replace(/^https?:\/\//, '').split('/')[0];
+}
+
+// Status line while waiting for the first words: loading → reading → writing.
+function waitingText(what) {
+	const ai = settings.ai;
+	if (ai.provider === 'webllm') return 'Preparo il modello…';
+	if (AI.isLocal(ai)) return `Il modello sul computer sta leggendo ${what}…`;
+	return `${aiHost()} sta leggendo ${what}…`;
+}
+
 // Summaries are only ever made on request: nothing runs when an article opens.
 function setupTldr(item, src, text) {
 	const go = $('#tldr-go');
 	const box = $('#tldr');
 	const out = $('#tldr-out');
+	const status = $('#tldr-status');
 	if (!go || !box || !out) return;
 	const local = AI.isLocal(settings.ai);
+	const idle = `${icon('sparkle', 17)} Riassumi`;
+
+	const stopButton = () => {
+		go.innerHTML = `${icon('stop', 17)} Interrompi`;
+		go.classList.add('stop');
+	};
+	const resetButton = () => {
+		if (!go.isConnected) return;
+		go.innerHTML = idle;
+		go.classList.remove('stop');
+	};
 
 	const run = async () => {
 		state.aiCtrl?.abort();
 		const ctrl = state.aiCtrl = new AbortController();
-		out.innerHTML = `<p class="cursor"></p>${local ? `<p class="ai-note">${esc(LOCAL_NOTE)} <button class="linkbtn" id="tldr-stop">Interrompi</button></p>` : ''}`;
-		$('#tldr-stop')?.addEventListener('click', () => ctrl.abort());
-		go.disabled = true;
+		out.innerHTML = '';
+		status.innerHTML = statusHTML(waitingText("l'articolo"));
+		stopButton();
+		let started = false;
 		try {
 			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.tldrPrompt(item, src.name, settings.ai.provider === 'webllm' ? (text || '').slice(0, 6000) : text), (t) => {
-				if (out.isConnected) out.innerHTML = AI.renderMarkdown(t) || '<p class="cursor"></p>';
+				if (!out.isConnected) return;
+				if (!started) { started = true; status.innerHTML = ''; }
+				out.innerHTML = AI.streamMarkdown(t);
 			}, ctrl.signal, (pr) => {
-				if (out.isConnected) out.innerHTML = `<p class="help" style="margin:0">${esc(progressText(pr))}</p>`;
+				if (!status.isConnected || started) return;
+				status.innerHTML = (pr.progress || 0) >= 1 ? statusHTML("Modello pronto: leggo l'articolo…") : statusHTML(progressText(pr), pr.progress || 0);
 			}, WebLLM.TLDR_MAX_TOKENS);
 			if (res) tldrCache.set(item.id, res);
-			if (out.isConnected) out.innerHTML = AI.renderMarkdown(res);
+			if (out.isConnected) {
+				status.innerHTML = '';
+				out.innerHTML = AI.renderMarkdown(res) + (local ? '' : `<p class="ai-source">Generato da ${esc(aiHost())}</p>`);
+			}
 		} catch (e) {
 			if (!out.isConnected) return;
-			if (e.name === 'AbortError') { box.hidden = true; return; }
-			out.innerHTML = `<p class="ai-err">${esc(e.message)}</p><button class="linkbtn" id="tldr-retry">Riprova</button>`;
-			$('#tldr-retry')?.addEventListener('click', run);
+			if (e.name === 'AbortError') {
+				status.innerHTML = '';
+				if (!out.textContent.trim()) box.hidden = true;
+			} else {
+				status.innerHTML = '';
+				out.innerHTML = `<p class="ai-err">${esc(e.message)}</p>`;
+			}
 		} finally {
-			if (go.isConnected) go.disabled = false;
+			resetButton();
 		}
 	};
 
-	go.addEventListener('click', () => {
+	go.addEventListener('click', async () => {
+		if (go.classList.contains('stop')) { state.aiCtrl?.abort(); return; }
 		box.hidden = false;
 		const cached = tldrCache.get(item.id);
-		if (cached) out.innerHTML = AI.renderMarkdown(cached);
-		else run();
+		if (cached) {
+			status.innerHTML = '';
+			out.innerHTML = AI.renderMarkdown(cached);
+		} else {
+			status.innerHTML = statusHTML('Controllo il modello…');
+			out.innerHTML = '';
+			const problem = await aiPrecheck();
+			if (problem) { status.innerHTML = ''; out.innerHTML = noticeHTML(problem); }
+			else run();
+		}
 		box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 	});
 	$('#tldr-close').addEventListener('click', () => {
@@ -512,8 +588,6 @@ function setupTldr(item, src, text) {
 		box.hidden = true;
 	});
 }
-
-const LOCAL_NOTE = 'Il modello lavora sul tuo dispositivo: finché non ha finito, il telefono o il computer possono rallentare un po\'.';
 
 /* ---------- Daily recap ---------- */
 
@@ -542,46 +616,79 @@ function renderRecap() {
 	const used = items.slice(0, max);
 	const key = `${new Date().toDateString()}|${state.filter.cat}|${state.filter.src}|${norm(state.filter.q)}`;
 	const cached = recapCache.get(key);
+	const where = !ai ? '' : device
+		? 'Generato sul tuo dispositivo, anche offline: nessuna notizia esce da qui. Mentre lavora il telefono può rallentare un po\'.'
+		: AI.isLocal(settings.ai)
+			? 'Generato sul tuo computer: nessuna notizia esce da qui. Mentre lavora il computer può rallentare un po\'.'
+			: `Titoli e descrizioni vengono inviati a ${esc(aiHost())}.`;
+	const genLabel = (again) => `${icon(again ? 'refresh' : 'sparkle', 17)} ${again ? 'Rigenera' : 'Genera il riassunto'}`;
 
 	view.innerHTML = `
 		<section class="page recap">
 			<h1>Il riassunto <em>di oggi</em></h1>
-			<p class="lede">${new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}${label ? ` · ${esc(label)}` : ''} · ${items.length} notizie${items.length > used.length ? `, le ${used.length} più recenti` : ''}.</p>
-			${!ai ? `<div class="empty"><strong>Serve un modello AI</strong>Collega un modello locale (Ollama, LM Studio…) o una API nelle impostazioni.<br><br><a class="btn primary" href="#/impostazioni">Configura l'AI</a></div>`
+			<p class="lede">${new Date().toLocaleDateString('it-IT', { weekday: 'long', day: 'numeric', month: 'long' })}${label ? ` · ${esc(label)}` : ''} · ${items.length} notizie${items.length > used.length ? `, le ${used.length} più recenti` : ''}</p>
+			${!ai ? noticeHTML({ title: 'Serve un modello AI', text: 'Scegli nelle impostazioni un modello nel dispositivo, sul tuo computer o un servizio online.' })
 			: !items.length ? `<div class="empty"><strong>Nessuna notizia di oggi</strong>Con i filtri attuali non c'è nulla da riassumere.</div>`
-			: `<div class="ai-out" id="recap-out">${cached ? AI.renderMarkdown(cached) : ''}</div>
-				<div class="actions">
-					<button class="btn ${cached ? '' : 'primary'}" id="go">${cached ? 'Rigenera' : 'Genera il riassunto'}</button>
-					<a class="btn" href="#/">Torna alle notizie</a>
+			: `<div class="recap-bar">
+					<button class="btn ${cached ? '' : 'primary'}" id="go">${genLabel(!!cached)}</button>
+					<a class="btn ghost" href="#/">${icon('back', 17)} Notizie</a>
 				</div>
-				<p class="help">${AI.isLocal(settings.ai) ? (device ? 'Il riassunto viene generato sul tuo dispositivo, anche offline: nessuna notizia esce da qui. Mentre lavora il dispositivo può rallentare un po\'; i modelli piccoli leggono meno notizie.' : 'Il riassunto viene generato sul tuo computer: nessuna notizia esce da qui. Mentre lavora il computer può rallentare un po\'.') : `Titoli e descrizioni vengono inviati a ${esc(settings.ai.base.replace(/^https?:\/\//, '').split('/')[0])}.`} I filtri attivi nella pagina delle notizie decidono cosa riassumere.</p>`}
+				<div id="recap-status"></div>
+				<article class="ai-out recap-out" id="recap-out">${cached ? AI.renderMarkdown(cached) : ''}</article>
+				<p class="ai-note">${icon('info', 15)}<span>${where} I filtri della pagina delle notizie decidono cosa riassumere.</span></p>`}
 		</section>`;
 
 	const go = $('#go');
 	if (!go) return;
+	const status = $('#recap-status');
+	const out = $('#recap-out');
+
+	// On-device model missing or unsupported: say so before anything starts.
+	aiPrecheck().then((problem) => {
+		if (problem && status.isConnected && !out.textContent.trim()) { status.innerHTML = noticeHTML(problem); go.disabled = true; }
+	});
+
 	go.addEventListener('click', async () => {
-		const out = $('#recap-out');
+		if (go.classList.contains('stop')) { state.aiCtrl?.abort(); return; }
 		state.aiCtrl?.abort();
 		const ctrl = state.aiCtrl = new AbortController();
-		go.disabled = true;
-		go.textContent = 'Sto scrivendo…';
-		out.innerHTML = '<p class="cursor"></p>';
+		const previous = out.innerHTML;
+		go.innerHTML = `${icon('stop', 17)} Interrompi`;
+		go.classList.add('stop');
+		go.classList.remove('primary');
+		out.innerHTML = '';
+		status.innerHTML = statusHTML(waitingText(`${used.length} notizie`));
 		const lines = used.map((it) => {
 			const s = state.sources.get(it.s);
 			return `- [${s?.name || it.s}] ${it.t}${it.d ? ' — ' + truncate(it.d, device ? WebLLM.RECAP_LIMIT.desc : 160) : ''}`;
 		});
+		let started = false;
 		try {
 			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.recapPrompt(lines, label), (t) => {
-				if (out.isConnected) out.innerHTML = AI.renderMarkdown(t) + '<span class="cursor"></span>';
+				if (!out.isConnected) return;
+				if (!started) { started = true; status.innerHTML = ''; }
+				out.innerHTML = AI.streamMarkdown(t);
 			}, ctrl.signal, (pr) => {
-				if (out.isConnected) out.innerHTML = `<p class="help">${esc(progressText(pr))}</p>`;
+				if (!status.isConnected || started) return;
+				status.innerHTML = (pr.progress || 0) >= 1 ? statusHTML(`Modello pronto: leggo ${used.length} notizie…`) : statusHTML(progressText(pr), pr.progress || 0);
 			}, device ? WebLLM.RECAP_LIMIT.maxTokens : undefined);
 			if (res) recapCache.set(key, res);
-			if (out.isConnected) out.innerHTML = AI.renderMarkdown(res);
+			if (out.isConnected) { status.innerHTML = ''; out.innerHTML = AI.renderMarkdown(res); }
 		} catch (e) {
-			if (e.name !== 'AbortError' && out.isConnected) out.innerHTML = `<p class="ai-err">${esc(e.message)}</p>`;
+			if (!out.isConnected) return;
+			status.innerHTML = '';
+			if (e.name === 'AbortError') {
+				if (!started) out.innerHTML = previous;
+				else out.insertAdjacentHTML('beforeend', '<p class="ai-source">Interrotto.</p>');
+				out.querySelector('.cursor')?.remove();
+			} else {
+				out.innerHTML = `<p class="ai-err">${esc(e.message)}</p>`;
+			}
 		}
-		if (go.isConnected) { go.disabled = false; go.textContent = 'Rigenera'; go.classList.remove('primary'); }
+		if (go.isConnected) {
+			go.classList.remove('stop');
+			go.innerHTML = genLabel(!!out.textContent.trim());
+		}
 	});
 }
 
@@ -833,7 +940,13 @@ const ICON_PATHS = {
 	chevron: '<path d="m9.5 6 6 6-6 6"/>',
 	sparkle: '<path d="M12 3.5 13.9 9l5.6 1.9-5.6 1.9L12 18.5l-1.9-5.7-5.6-1.9L10.1 9z"/><path d="M18.5 3.5v3M17 5h3"/>',
 	key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 8.5-8.5M16.5 6.5l2.5 2.5M14 9l2 2"/>',
-	info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/>'
+	info: '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5.5M12 7.8v.2"/>',
+	stop: '<rect x="6.5" y="6.5" width="11" height="11" rx="2.2"/>',
+	share: '<path d="M12 15V4M8 7.5 12 3.8l4 3.7M6 11.5v7.2c0 .7.6 1.3 1.3 1.3h9.4c.7 0 1.3-.6 1.3-1.3v-7.2"/>',
+	external: '<path d="M14 4.5h5.5V10M19.3 4.7 11 13M17.5 14v4.2c0 .7-.6 1.3-1.3 1.3H5.8c-.7 0-1.3-.6-1.3-1.3V7.8c0-.7.6-1.3 1.3-1.3H10"/>',
+	back: '<path d="M19.5 12h-15M10.5 6l-6 6 6 6"/>',
+	close: '<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+	settings: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>'
 };
 
 const icon = (name, size = 20) => `<svg class="ic" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON_PATHS[name]}</svg>`;

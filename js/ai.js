@@ -193,9 +193,17 @@ Scrivi un resoconto in italiano della giornata.
 }
 
 // Minimal, safe Markdown for model output.
+// A typing cursor placed at the end of the last line (not on a line of its own).
+export const CURSOR = '\u2063';
+export function streamMarkdown(md) {
+	return renderMarkdown(md + CURSOR).replace(CURSOR, '<span class="cursor"></span>');
+}
+
 export function renderMarkdown(md) {
 	const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-	const inline = (s) => esc(s)
+	// While streaming, a bold marker may still be open: hide it until it closes.
+	const balance = (s) => ((s.match(/\*\*/g) || []).length % 2 ? s.replace(/\*\*(?!.*\*\*)/, '') : s);
+	const inline = (s) => esc(balance(s))
 		.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
 		.replace(/(^|[^*])\*([^*\s][^*]*?)\*/g, '$1<em>$2</em>')
 		.replace(/`([^`]+)`/g, '<code>$1</code>');
