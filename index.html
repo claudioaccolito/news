@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<meta name="description" content="Edicola: le tue notizie da centinaia di fonti, solo testo, senza account e senza tracciamento.">
+	<meta name="theme-color" content="#f7f4ee" media="(prefers-color-scheme: light)">
+	<meta name="theme-color" content="#161513" media="(prefers-color-scheme: dark)">
+	<meta name="referrer" content="no-referrer">
+	<title>Edicola</title>
+	<link rel="manifest" href="manifest.webmanifest">
+	<link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+	<link rel="apple-touch-icon" href="icons/icon-192.png">
+	<link rel="stylesheet" href="css/app.css">
+	<script>
+		// Apply theme and text size before first paint.
+		try {
+			const s = JSON.parse(localStorage.getItem('edicola:v1') || '{}');
+			if (s.theme && s.theme !== 'auto') document.documentElement.dataset.theme = s.theme;
+			if (s.size) document.documentElement.dataset.size = s.size;
+		} catch {}
+	</script>
+	<script type="module" src="js/app.js"></script>
+</head>
+<body>
+	<header class="bar">
+		<div class="bar-in">
+			<a class="brand" href="#/">Edicola</a>
+			<nav class="bar-nav">
+				<a href="#/riepilogo" class="nav-ai" hidden title="Riassunto del giorno">Riassunto</a>
+				<a href="#/fonti" title="Scegli le fonti">Fonti</a>
+				<a href="#/impostazioni" title="Impostazioni" aria-label="Impostazioni">
+					<svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="10" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+				</a>
+			</nav>
+		</div>
+	</header>
+	<main id="view" class="view" tabindex="-1">
+		<p class="loading">Caricamento…</p>
+	</main>
+	<noscript><p class="wrap">Edicola ha bisogno di JavaScript per funzionare.</p></noscript>
+</body>
+</html>

@@ -1,0 +1,66 @@
+name: Aggiorna notizie e pubblica
+
+# Every 30 minutes GitHub fetches *all* the sources in the catalog and publishes one bundle.
+# Every device downloads the same bundle and filters it locally, so neither GitHub nor the
+# publishers learn which sources a reader follows. No server, no database, no cost.
+
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write # only used by the keepalive step below
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Prepara il sito statico
+        run: |
+          mkdir -p _site/data
+          cp -r index.html manifest.webmanifest sw.js css js icons _site/
+          cp data/catalog.json _site/data/
+          sed -i "s/__VERSION__/${GITHUB_SHA::8}/" _site/sw.js
+
+      - name: Scarica le fonti
+        run: node scripts/build-news.mjs _site/data
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      # GitHub disables scheduled workflows after 60 days without repository activity.
+      # Re-enabling the workflow through the API resets that timer: no maintenance needed.
+      - name: Keepalive
+        if: github.event_name == 'schedule'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/news.yml/enable"
+
+  deploy:
+    needs: build
+    if: github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
