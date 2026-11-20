@@ -9,7 +9,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseFeed, truncate } from '../js/feed-parser.js';
+import { parseFeed, truncate, dedupeStories } from '../js/feed-parser.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = process.argv[2] || join(ROOT, '_site', 'data');
@@ -129,6 +129,14 @@ async function main() {
   });
 
   items.sort((a, b) => b.p - a.p);
+  // Same story published several times by one source (flash, update, "(2)"): keep one.
+  const bySource = new Map();
+  for (const it of items) (bySource.get(it.s) || bySource.set(it.s, []).get(it.s)).push(it);
+  const before = items.length;
+  items.length = 0;
+  for (const list of bySource.values()) items.push(...dedupeStories(list));
+  items.sort((a, b) => b.p - a.p);
+  console.log(`Duplicates removed: ${before - items.length}`);
   await mkdir(join(OUT, 'content'), { recursive: true });
   await writeFile(join(OUT, 'news.json'), JSON.stringify({ v: 1, at: now, status, items }));
   await Promise.all(shards.map((s, i) => writeFile(join(OUT, 'content', `${i.toString(16)}.json`), JSON.stringify(s))));

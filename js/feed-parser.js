@@ -69,6 +69,40 @@ export function htmlToText(html) {
   return s;
 }
 
+// Key that is equal for re-publications of the same story: agencies such as ANSA post
+// "++ Title ++" as a flash, then "Title", then "Title (2)" with different links.
+export function storyKey(title) {
+	return String(title || '')
+		.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+		.toLowerCase()
+		.replace(/\+\+/g, ' ')
+		.replace(/\(\s*\d+\s*\)\s*$/, ' ')
+		.replace(/\b(ultim'?ora|ultima ora|breaking|live|video|foto|aggiornamento|aggiornato|update[ds]?)\b/g, ' ')
+		.replace(/[^a-z0-9]+/g, ' ')
+		.trim();
+}
+
+// Among items about the same story keep one: the most informative text, the latest time.
+// Items must be sorted newest first; their order is kept.
+export function dedupeStories(items) {
+	const byKey = new Map();
+	const out = [];
+	for (const it of items) {
+		const key = storyKey(it.t);
+		if (key.length < 12) { out.push(it); continue; }
+		const i = byKey.get(key);
+		if (i === undefined) { byKey.set(key, out.length); out.push(it); continue; }
+		const kept = out[i];
+		const better = (it.c && !kept.c) || (it.d || '').length > (kept.d || '').length + 20;
+		if (better) out[i] = { ...it, p: Math.max(it.p, kept.p), t: cleanTitleMarks(it.t) };
+	}
+	return out.map((it) => (/\+\+|\(\s*\d+\s*\)\s*$/.test(it.t) ? { ...it, t: cleanTitleMarks(it.t) } : it));
+}
+
+function cleanTitleMarks(t) {
+	return t.replace(/\+\+/g, '').replace(/\s*\(\s*\d+\s*\)\s*$/, '').replace(/\s{2,}/g, ' ').trim();
+}
+
 export function truncate(s, max) {
   if (!s || s.length <= max) return s || '';
   const cut = s.slice(0, max);

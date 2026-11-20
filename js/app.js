@@ -1,7 +1,7 @@
 import { settings, save, readState, tldrCache, recapCache, resetAll, exportSettings, importSettings } from './store.js';
 import * as AI from './ai.js';
 import * as WebLLM from './webllm.js';
-import { parseFeed, truncate } from './feed-parser.js';
+import { parseFeed, truncate, dedupeStories } from './feed-parser.js';
 
 const view = document.getElementById('view');
 const PAGE = 80;
@@ -233,7 +233,8 @@ function selectedItems() {
 		seen.add(it.id);
 		out.push(it);
 	}
-	return out;
+	// The same story from two of the chosen feeds (e.g. ANSA and ANSA Mondo) shows once.
+	return dedupeStories(out);
 }
 
 function terms() {
