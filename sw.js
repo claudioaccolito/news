@@ -4,6 +4,7 @@
 const VERSION = '__VERSION__';
 const SHELL = `edicola-shell-${VERSION}`;
 const DATA = 'edicola-data';
+const VENDOR = 'edicola-vendor-0.2.87'; // WebLLM library and GPU kernels: large, change rarely
 
 const SHELL_FILES = [
 	'./',
@@ -29,7 +30,7 @@ self.addEventListener('install', (e) => {
 self.addEventListener('activate', (e) => {
 	e.waitUntil((async () => {
 		// Only our own caches: the WebLLM model cache must survive app updates.
-		for (const k of await caches.keys()) if (k.startsWith('edicola-') && k !== SHELL && k !== DATA) await caches.delete(k);
+		for (const k of await caches.keys()) if (k.startsWith('edicola-') && k !== SHELL && k !== DATA && k !== VENDOR) await caches.delete(k);
 		await self.clients.claim();
 	})());
 });
@@ -38,6 +39,19 @@ self.addEventListener('fetch', (e) => {
 	const req = e.request;
 	const url = new URL(req.url);
 	if (req.method !== 'GET' || url.origin !== location.origin) return;
+
+	if (url.pathname.includes('/vendor/')) {
+		// Downloaded only if the on-device AI is used; kept across app updates, works offline.
+		e.respondWith((async () => {
+			const cache = await caches.open(VENDOR);
+			const hit = await cache.match(req);
+			if (hit) return hit;
+			const res = await fetch(req);
+			if (res.ok) await cache.put(req, res.clone());
+			return res;
+		})());
+		return;
+	}
 
 	if (url.pathname.includes('/data/')) {
 		// Network first, fall back to the last copy for offline reading.

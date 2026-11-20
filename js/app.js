@@ -402,12 +402,13 @@ async function renderArticle(id) {
 			<div class="meta"><span class="src">${esc(s.name)}</span>${cat ? `<span class="dot"></span><span>${esc(cat.name)}</span>` : ''}</div>
 			<h1>${esc(item.t)}</h1>
 			<p class="byline">${item.a ? `di <span class="author">${esc(item.a)}</span> · ` : ''}<time datetime="${new Date(item.p).toISOString()}">${esc(fmtLong(item.p))}</time></p>
-			${ai ? `<section class="ai-box" id="tldr"><div class="label"><span>TL;DR</span></div><div class="ai-out" id="tldr-out"></div></section>` : ''}
 			<div class="prose" id="body">${item.d ? `<p class="lead">${esc(item.d)}</p>` : ''}</div>
 			<div class="actions">
 				<a class="btn primary" href="${esc(item.u)}" target="_blank" rel="noopener noreferrer">Leggi su ${esc(host || s.name)} ↗</a>
 				${navigator.share ? '<button class="btn" id="share">Condividi</button>' : '<button class="btn" id="share">Copia link</button>'}
+				${ai ? `<button class="linkbtn tldr-link" id="tldr-go">${icon('sparkle', 15)} Riassumi</button>` : ''}
 			</div>
+			${ai ? `<section class="ai-box" id="tldr" hidden><div class="label"><span>Riassunto</span><button class="linkbtn" id="tldr-close">Chiudi</button></div><div class="ai-out" id="tldr-out"></div></section>` : ''}
 		</article>`;
 
 	$('#back').addEventListener('click', () => {
@@ -441,18 +442,20 @@ function progressText(p) {
 	return pct ? `Preparo il modello… ${pct}%` : 'Preparo il modello…';
 }
 
+// Summaries are only ever made on request: nothing runs when an article opens.
 function setupTldr(item, src, text) {
+	const go = $('#tldr-go');
+	const box = $('#tldr');
 	const out = $('#tldr-out');
-	if (!out) return;
-	const cached = tldrCache.get(item.id);
-	if (cached) {
-		out.innerHTML = AI.renderMarkdown(cached);
-		return;
-	}
+	if (!go || !box || !out) return;
+	const local = AI.isLocal(settings.ai);
+
 	const run = async () => {
 		state.aiCtrl?.abort();
 		const ctrl = state.aiCtrl = new AbortController();
-		out.innerHTML = '<p class="cursor"></p>';
+		out.innerHTML = `<p class="cursor"></p>${local ? `<p class="ai-note">${esc(LOCAL_NOTE)} <button class="linkbtn" id="tldr-stop">Interrompi</button></p>` : ''}`;
+		$('#tldr-stop')?.addEventListener('click', () => ctrl.abort());
+		go.disabled = true;
 		try {
 			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.tldrPrompt(item, src.name, settings.ai.provider === 'webllm' ? (text || '').slice(0, 6000) : text), (t) => {
 				if (out.isConnected) out.innerHTML = AI.renderMarkdown(t) || '<p class="cursor"></p>';
@@ -462,17 +465,29 @@ function setupTldr(item, src, text) {
 			if (res) tldrCache.set(item.id, res);
 			if (out.isConnected) out.innerHTML = AI.renderMarkdown(res);
 		} catch (e) {
-			if (e.name === 'AbortError' || !out.isConnected) return;
-			out.innerHTML = `<p class="ai-err">${esc(e.message)}</p><button class="linkbtn" id="tldr-go">Riprova</button>`;
-			$('#tldr-go')?.addEventListener('click', run);
+			if (!out.isConnected) return;
+			if (e.name === 'AbortError') { box.hidden = true; return; }
+			out.innerHTML = `<p class="ai-err">${esc(e.message)}</p><button class="linkbtn" id="tldr-retry">Riprova</button>`;
+			$('#tldr-retry')?.addEventListener('click', run);
+		} finally {
+			if (go.isConnected) go.disabled = false;
 		}
 	};
-	if (settings.ai.auto) run();
-	else {
-		out.innerHTML = '<button class="btn small" id="tldr-go">Riassumi in italiano</button>';
-		$('#tldr-go').addEventListener('click', run);
-	}
+
+	go.addEventListener('click', () => {
+		box.hidden = false;
+		const cached = tldrCache.get(item.id);
+		if (cached) out.innerHTML = AI.renderMarkdown(cached);
+		else run();
+		box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+	});
+	$('#tldr-close').addEventListener('click', () => {
+		state.aiCtrl?.abort();
+		box.hidden = true;
+	});
 }
+
+const LOCAL_NOTE = 'Il modello lavora sul tuo dispositivo: finché non ha finito, il telefono o il computer possono rallentare un po\'.';
 
 /* ---------- Daily recap ---------- */
 
@@ -513,7 +528,7 @@ function renderRecap() {
 					<button class="btn ${cached ? '' : 'primary'}" id="go">${cached ? 'Rigenera' : 'Genera il riassunto'}</button>
 					<a class="btn" href="#/">Torna alle notizie</a>
 				</div>
-				<p class="help">${AI.isLocal(settings.ai) ? (device ? 'Il riassunto viene generato sul tuo dispositivo, anche offline: nessuna notizia esce da qui. I modelli piccoli sono più lenti e leggono meno notizie.' : 'Il riassunto viene generato sul tuo computer: nessuna notizia esce dal dispositivo.') : `Titoli e descrizioni vengono inviati a ${esc(settings.ai.base.replace(/^https?:\/\//, '').split('/')[0])}.`} I filtri attivi nella pagina delle notizie decidono cosa riassumere.</p>`}
+				<p class="help">${AI.isLocal(settings.ai) ? (device ? 'Il riassunto viene generato sul tuo dispositivo, anche offline: nessuna notizia esce da qui. Mentre lavora il dispositivo può rallentare un po\'; i modelli piccoli leggono meno notizie.' : 'Il riassunto viene generato sul tuo computer: nessuna notizia esce da qui. Mentre lavora il computer può rallentare un po\'.') : `Titoli e descrizioni vengono inviati a ${esc(settings.ai.base.replace(/^https?:\/\//, '').split('/')[0])}.`} I filtri attivi nella pagina delle notizie decidono cosa riassumere.</p>`}
 		</section>`;
 
 	const go = $('#go');
@@ -848,7 +863,7 @@ function renderSettings() {
 			<h2>Intelligenza artificiale <span class="h2-note">facoltativa</span></h2>
 			<div class="card">
 				<div class="card-pad">
-					<p class="help" style="margin-top:0">Riassunto delle notizie del giorno e TL;DR in italiano di ogni articolo.</p>
+					<p class="help" style="margin-top:0">Riassunto del giorno e riassunto dei singoli articoli in italiano, solo quando li chiedi tu.</p>
 					<div class="modes" role="radiogroup" aria-label="Dove gira l'intelligenza artificiale">
 						${Object.entries(AI_MODES).map(([k, m]) => `<button class="mode" role="radio" data-mode="${k}" aria-checked="${aiMode(ai) === k}">
 							<span class="mode-top"><span class="mode-ic">${icon(m.icon, 22)}</span>${m.badge ? `<span class="badge ${m.badge[0]}">${m.badge[1]}</span>` : ''}</span>
@@ -960,7 +975,7 @@ function renderSettings() {
 		const mode = aiMode(ai);
 		if (mode === 'off') { panel.innerHTML = ''; return; }
 		const p = AI.PRESETS[ai.preset] || AI.PRESETS.custom;
-		const autoRow = `<label class="switch-row"><span><span class="set-title">TL;DR automatico</span><span class="set-sub">Appena apri un articolo</span></span><input type="checkbox" class="switch" id="auto" ${ai.auto ? 'checked' : ''}></label>`;
+		const slowNote = `<p class="ai-note">${icon('info', 15)} Mentre riassume, un modello locale usa molto processore e GPU: il ${mode === 'device' ? 'dispositivo' : 'computer'} può rallentare un po' finché non ha finito. I riassunti partono solo quando li chiedi tu.</p>`;
 		const status = '<p class="status" id="ai-status" role="status"></p>';
 
 		if (mode === 'device') {
@@ -977,7 +992,13 @@ function renderSettings() {
 					</div>
 					${status}
 					<p class="help">${p.help}</p>
-					${autoRow}
+					${slowNote}
+					<details class="adv">
+						<summary>Da dove arriva il modello</summary>
+						<p class="help">La <strong>libreria WebLLM</strong> e i <strong>programmi per la GPU</strong> sono inclusi in Edicola: arrivano dal tuo stesso sito, come il resto dell'app.</p>
+						<p class="help">I <strong>pesi del modello</strong> (i numeri che il modello ha imparato) si scaricano una volta da <strong>Hugging Face</strong>, dall'account ufficiale <strong>mlc-ai</strong> del progetto open source MLC LLM, nato alla Carnegie Mellon University e usato da migliaia di sviluppatori. I modelli originali sono di Alibaba (Qwen), Meta (Llama) e Google (Gemma); MLC li converte per il browser.</p>
+						<p class="help">È una fonte affidabile: Hugging Face è la piattaforma di riferimento per i modelli di intelligenza artificiale, il download è cifrato (HTTPS) e i pesi sono solo dati, non programmi: non possono eseguire codice. Chi li ospita vede solo che li scarichi, mai cosa leggi o riassumi.</p>
+					</details>
 				</div>`;
 		} else {
 			const list = mode === 'computer' ? COMPUTER_APPS : ONLINE_SERVICES;
@@ -994,7 +1015,7 @@ function renderSettings() {
 					</label>
 					<div class="actions" style="margin-top:0.25rem"><button class="btn primary" id="test" type="button">${icon('sparkle', 17)} Prova</button></div>
 					${status}
-					${autoRow}
+					${mode === 'computer' ? slowNote : `<p class="ai-note">${icon('info', 15)} Titoli e testi delle notizie che chiedi di riassumere vengono inviati a questo servizio. I riassunti partono solo quando li chiedi tu.</p>`}
 					<details class="adv">
 						<summary>Opzioni avanzate</summary>
 						${custom ? '' : `<label class="field"><span>Indirizzo</span><input class="input" id="base" value="${esc(ai.base)}" inputmode="url" autocomplete="off"></label>`}
@@ -1017,7 +1038,6 @@ function renderSettings() {
 				if ($('#key')) ai.key = val('key');
 				if ($('#max')) ai.maxItems = Math.max(10, Math.min(400, Number(val('max')) || 60));
 			}
-			ai.auto = $('#auto').checked;
 			save();
 			setNav('/impostazioni');
 		};

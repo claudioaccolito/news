@@ -6,7 +6,8 @@ import * as WebLLM from './webllm.js';
 export const PRESETS = {
 	device: {
 		label: 'Nel dispositivo (WebLLM, sperimentale)', provider: 'webllm', base: '', model: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', key: false,
-		help: 'Il modello gira dentro il browser con la GPU del dispositivo (WebGPU), anche offline: nulla esce dal telefono o dal PC. Va scaricato una volta (da Hugging Face e GitHub, progetto MLC) e resta salvato nel browser. Ideale per i TL;DR; il riassunto del giorno impegna molto il telefono, quindi usa meno notizie. Dopo un minuto e mezzo di inattività il modello viene tolto dalla memoria.'
+		help: 'Il modello gira dentro il browser con la GPU del dispositivo (WebGPU), anche offline: nulla esce dal telefono o dal PC. Si scarica una volta e resta salvato; dopo un minuto e mezzo di inattività viene tolto dalla memoria.'
+
 	},
 	ollama: {
 		label: 'Ollama (locale)', provider: 'openai', base: 'http://localhost:11434/v1', model: 'llama3.2', key: false,

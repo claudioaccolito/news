@@ -1,5 +1,5 @@
 // Runs the on-device model off the main thread so scrolling stays smooth.
-import { WebWorkerMLCEngineHandler } from 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.87/+esm';
+import { WebWorkerMLCEngineHandler } from '../vendor/web-llm/web-llm.js';
 
 const handler = new WebWorkerMLCEngineHandler();
 self.onmessage = (msg) => handler.onmessage(msg);

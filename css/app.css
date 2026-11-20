@@ -1310,3 +1310,31 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
 	* { transition: none !important; animation: none !important; }
 }
+
+/* ---------- On-request summaries ---------- */
+
+.tldr-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.35rem;
+	margin-left: auto;
+	font-size: 0.88rem;
+	color: var(--faint);
+	text-decoration: none;
+}
+.tldr-link:hover { color: var(--accent); }
+.tldr-link:disabled { opacity: 0.5; cursor: default; }
+.actions:has(.tldr-link) { align-items: center; }
+#tldr { margin-top: 1.25rem; }
+
+.ai-note {
+	display: flex;
+	gap: 0.45rem;
+	align-items: flex-start;
+	font-size: 0.8rem;
+	line-height: 1.5;
+	color: var(--muted);
+	margin: 0.75rem 0 0;
+}
+.ai-note .ic { margin-top: 0.15rem; color: var(--faint); }
+.ai-out .ai-note { display: block; }

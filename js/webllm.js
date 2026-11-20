@@ -1,11 +1,11 @@
 // Optional on-device AI with WebLLM (WebGPU). Nothing here is downloaded unless the user
-// turns it on. Three downloads, all cached by the browser afterwards:
-//   - the WebLLM library: cdn.jsdelivr.net (pinned version)
-//   - the model weights: huggingface.co/mlc-ai
-//   - the compiled GPU kernels: raw.githubusercontent.com/mlc-ai/binary-mlc-llm-libs
-// Inference then runs in a Web Worker, fully offline; nothing about the news is ever sent.
+// turns it on. The WebLLM library and the compiled GPU kernels ship with Edicola
+// (vendor/web-llm, see its README); only the model weights come from huggingface.co/mlc-ai.
+// Everything is cached by the browser; inference runs in a Web Worker, fully offline,
+// and nothing about the news is ever sent anywhere.
 
-export const LIB = 'https://cdn.jsdelivr.net/npm/@mlc-ai/web-llm@0.2.87/+esm';
+export const LIB = new URL('../vendor/web-llm/web-llm.js', import.meta.url).href;
+const LIBS = new URL('../vendor/web-llm/libs/', import.meta.url).href;
 
 export const MODELS = [
 	{ id: 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC', label: 'Qwen 2.5 · 1,5 miliardi', size: '≈ 1 GB', note: 'il migliore in italiano; consigliato su PC' },
@@ -33,6 +33,21 @@ let f16 = null;
 
 const lib = () => (libPromise ??= import(LIB).catch((e) => { libPromise = null; throw e; }));
 
+// WebLLM's model list, pointed at our own copy of the GPU kernels for the models we offer.
+let appConfigCache = null;
+async function appConfig() {
+	if (appConfigCache) return appConfigCache;
+	const w = await lib();
+	const ours = new Set(MODELS.flatMap((m) => [m.id, m.id.replace('q4f16_1', 'q4f32_1')]));
+	appConfigCache = {
+		...w.prebuiltAppConfig,
+		model_list: w.prebuiltAppConfig.model_list.map((m) => ours.has(m.model_id)
+			? { ...m, model_lib: LIBS + m.model_lib.split('/').pop() }
+			: m)
+	};
+	return appConfigCache;
+}
+
 export async function support() {
 	if (!('gpu' in navigator)) return { ok: false, why: 'Questo browser non supporta WebGPU. Usa Chrome o Edge aggiornati (su Android serve Chrome 121 o successivo).' };
 	try {
@@ -54,7 +69,7 @@ async function resolveId(id) {
 export async function isCached(id) {
 	try {
 		const w = await lib();
-		return await w.hasModelInCache(await resolveId(id));
+		return await w.hasModelInCache(await resolveId(id), await appConfig());
 	} catch {
 		return false;
 	}
@@ -64,7 +79,7 @@ export async function remove(id) {
 	const w = await lib();
 	const real = await resolveId(id);
 	if (engine?.id === real) await unload();
-	await w.deleteModelAllInfoInCache(real);
+	await w.deleteModelAllInfoInCache(real, await appConfig());
 }
 
 export async function unload() {
@@ -91,6 +106,7 @@ export async function load(id, onProgress) {
 				id: real,
 				worker,
 				promise: w.CreateWebWorkerMLCEngine(worker, real, {
+					appConfig: await appConfig(),
 					initProgressCallback: (r) => { for (const l of listeners) l(r); }
 				}).catch((e) => { engine = null; worker.terminate(); throw e; })
 			};

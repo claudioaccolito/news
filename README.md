@@ -51,4 +51,9 @@ Prova in locale: `node scripts/build-news.mjs _site/data`, poi servi la cartella
 
 ## AI nel dispositivo (WebLLM)
 
-Impostazioni → Intelligenza artificiale → *Nel dispositivo*. Serve un browser con WebGPU (Chrome/Edge recenti, anche su Android). Il modello (400 MB – 1,4 GB) si scarica una volta sola e resta nella cache del browser; da lì in poi funziona anche offline. Consigliato Qwen 2.5 1,5B. Ottimo per i TL;DR; il riassunto del giorno usa al massimo 35 notizie per stare nel contesto del modello.
+Impostazioni → Intelligenza artificiale → *Nel dispositivo*. Serve un browser con WebGPU (Chrome/Edge recenti, anche su Android).
+
+- La libreria WebLLM e i programmi per la GPU sono inclusi nel repo (`vendor/web-llm`, Apache 2.0, con hash SHA-256 nel README della cartella).
+- Solo i pesi del modello (400 MB – 1,4 GB) si scaricano una volta da Hugging Face (`huggingface.co/mlc-ai`) e restano nella cache del browser; da lì in poi funziona anche offline.
+- I riassunti partono solo su richiesta (il link «Riassumi» in fondo all'articolo, o la pagina Riassunto). Mentre lavora il modello impegna molto la GPU: il dispositivo può rallentare finché non ha finito. Dopo 90 secondi di inattività viene tolto dalla memoria.
+- Su telefono è consigliato Llama 3.2 1B; su PC Qwen 2.5 1,5B.

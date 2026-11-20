@@ -19,7 +19,6 @@ const DEFAULTS = {
 		base: '',
 		model: '',
 		key: '',
-		auto: false,      // generate TL;DR automatically when opening an article
 		maxItems: 60      // news items sent for the daily recap
 	}
 };
