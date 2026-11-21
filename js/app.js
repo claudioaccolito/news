@@ -1,7 +1,7 @@
 import { settings, save, readState, tldrCache, recapCache, resetAll, exportSettings, importSettings } from './store.js';
 import * as AI from './ai.js';
 import * as WebLLM from './webllm.js';
-import { parseFeed, truncate, dedupeStories } from './feed-parser.js';
+import { parseFeed, truncate, dedupeStories, cleanArticle, proseLength } from './feed-parser.js';
 
 const view = document.getElementById('view');
 const PAGE = 80;
@@ -193,7 +193,7 @@ async function fetchArticle(url) {
 			if (size > 3e6) continue; // more than 3 MB: not a normal article page
 			let html = await res.text();
 			if (html.length > 3e6) html = html.slice(0, 3e6);
-			const text = extractArticle(html).slice(0, 100000);
+			const text = cleanArticle(extractArticle(html)).slice(0, 100000);
 			if (text) return text;
 		} catch {}
 	}
@@ -271,7 +271,10 @@ async function longText(item) {
 			return {};
 		}));
 	}
-	return (await state.shards.get(shard))[item.id] || '';
+	// Clean here too, so bundles built before a cleaning rule changed are fixed as well;
+	// a «full text» that is only gallery captions is treated as no text.
+	const text = cleanArticle((await state.shards.get(shard))[item.id] || '');
+	return proseLength(text) >= 150 ? text : '';
 }
 
 /* ---------- Freshness ---------- */
@@ -507,7 +510,7 @@ async function renderArticle(id) {
 	// Summaries need the whole text: from the feed, or from the site through the reader's proxy.
 	// Most sites do not let a browser read their pages directly, so without either, no button.
 	const tldrGo = $('#tldr-go');
-	if (ai && (text || '').length < FULL_TEXT_MIN && !settings.proxy.trim()) tldrGo?.remove();
+	if (ai && proseLength(text) < FULL_TEXT_MIN && !settings.proxy.trim()) tldrGo?.remove();
 	else if (ai) setupTldr(item, s, text);
 }
 
@@ -621,7 +624,7 @@ function setupTldr(item, src, text) {
 	const fullText = async () => {
 		const fromSite = await fetchArticle(item.u);
 		if (fromSite) return { body: fromSite, from: 'site' };
-		if ((text || '').length >= FULL_TEXT_MIN) return { body: text, from: 'feed' };
+		if (proseLength(text) >= FULL_TEXT_MIN) return { body: text, from: 'feed' };
 		return null;
 	};
 

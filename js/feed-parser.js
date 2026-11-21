@@ -140,6 +140,29 @@ export function cleanSummary(s) {
   return out.replace(/\n{3,}/g, '\n\n').trim();
 }
 
+// Article body from a feed, without gallery counters, repeated captions and page furniture.
+const JUNK_LINE = [
+  /^\d+\s*(\/|di|of)\s*\d+$/i,                                  // "1 / 6", "2 di 10"
+  /^(foto|photo|video|credits?|crediti|fonte|source|getty images|ansa foto|ipa|lapresse|shutterstock)\b.{0,80}$/i,
+  /^(©|\(c\)|copyright)\b/i,
+  /^(leggi anche|leggi pure|ti potrebbe interessare|potrebbe interessarti|guarda anche|vedi anche|related|read more|continua a leggere|clicca qui|iscriviti|abbonati|sostieni|pubblicità|advertisement|sponsored|condividi|share this)\b/i,
+  /^(•\s*)?$/
+];
+
+export function cleanArticle(text) {
+  const lines = String(text || '').split('\n').map((l) => l.trim());
+  // Short lines repeated three or more times are captions or labels, not prose.
+  const count = new Map();
+  for (const l of lines) if (l && l.length <= 60) count.set(l.toLowerCase(), (count.get(l.toLowerCase()) || 0) + 1);
+  const kept = lines.filter((l) => !(l && l.length <= 60 && count.get(l.toLowerCase()) >= 3) && !JUNK_LINE.some((re) => re.test(l)));
+  return kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+
+// Length of the real prose: only lines long enough to be sentences, not captions.
+export function proseLength(text) {
+  return String(text || '').split('\n').reduce((n, l) => (l.trim().length >= 60 ? n + l.trim().length : n), 0);
+}
+
 function cleanTitle(s) {
   return htmlToText(s).replace(/\s+/g, ' ').trim();
 }
@@ -200,7 +223,7 @@ export function parseFeed(xml) {
     const rawSummary = textOf(tag(block, ['description', 'summary', 'media:description', 'itunes:summary']));
     const rawContent = textOf(tag(block, ['content:encoded', 'content']));
     const summary = cleanSummary(htmlToText(rawSummary));
-    const content = cleanSummary(htmlToText(rawContent));
+    const content = cleanArticle(cleanSummary(htmlToText(rawContent)));
     items.push({ title, link, date, author: authorOf(block), summary, content });
   }
   return { title: feedTitle, items };

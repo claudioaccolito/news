@@ -9,7 +9,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseFeed, truncate, dedupeStories } from '../js/feed-parser.js';
+import { parseFeed, truncate, dedupeStories, proseLength } from '../js/feed-parser.js';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = process.argv[2] || join(ROOT, '_site', 'data');
@@ -143,7 +143,7 @@ async function main() {
   for (const it of items) {
     const f = (fullBySource[it.s] ||= [0, 0]);
     f[1]++;
-    if (it.c && (shards[parseInt(it.id[0], 16)][it.id] || '').length >= 1200) f[0]++;
+    if (it.c && proseLength(shards[parseInt(it.id[0], 16)][it.id]) >= 1200) f[0]++;
   }
   const withFull = Object.entries(fullBySource).filter(([, [n]]) => n > 0).sort((a, b) => b[1][0] / b[1][1] - a[1][0] / a[1][1]);
   console.log(`Sources with full text in the feed: ${withFull.length} of ${Object.keys(fullBySource).length}`);
