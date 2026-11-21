@@ -590,6 +590,9 @@ function clip(text, max) {
 	return { text: cut.trim(), clipped: true };
 }
 
+// Below this, the feed holds only an excerpt: summarizing a few lines is pointless.
+const FULL_TEXT_MIN = 1200;
+
 function setupTldr(item, src, text) {
 	const go = $('#tldr-go');
 	const box = $('#tldr');
@@ -600,37 +603,40 @@ function setupTldr(item, src, text) {
 	const idle = `${icon('sparkle', 17)} Riassumi`;
 	let host = '';
 	try { host = new URL(item.u).hostname.replace(/^www\./, ''); } catch {}
+	const site = esc(host || src.name);
 
-	const footer = (full, clipped) => `<p class="ai-source">${full
-		? `${icon('check', 14)} Riassunto ${clipped ? `della prima parte dell'articolo (circa ${Math.round(clipped / 6)} parole), letta` : "dell'articolo completo, letto"} da ${esc(host || src.name)}.`
-		: `${icon('info', 14)} Riassunto dell'estratto: ${esc(host || src.name)} non permette di leggere l'articolo completo da qui.`}${local ? '' : ` Generato da ${esc(aiHost())}.`}</p>`;
-	const show = (cached) => {
-		const c = typeof cached === 'string' ? { t: cached, f: false } : cached;
-		out.innerHTML = AI.renderMarkdown(c.t) + footer(c.f, c.k);
+	const footer = (from, clipped) => `<p class="ai-source">${icon('check', 14)} Riassunto ${clipped ? `della prima parte dell'articolo (circa ${Math.round(clipped / 6)} parole)` : "dell'articolo completo"}, ${from === 'feed' ? `pubblicato da ${site} nel feed` : `letto da ${site}`}.${local ? '' : ` Generato da ${esc(aiHost())}.`}</p>`;
+	const show = (c) => { out.innerHTML = AI.renderMarkdown(c.t) + footer(c.s, c.k); };
+	const excerptOnly = () => `<div class="notice">
+		<span class="notice-ic">${icon('info', 18)}</span>
+		<div><strong>C'è solo l'estratto</strong>
+		<p style="margin-bottom:0">${site} non permette di leggere l'articolo completo da Edicola, e riassumere le poche righe qui sopra non servirebbe. Puoi leggerlo sul sito con il pulsante qui sopra.</p></div>
+	</div>`;
+
+	// Full text: from the site if it lets us read it, otherwise from the feed if it is complete.
+	const fullText = async () => {
+		const fromSite = await fetchArticle(item.u);
+		if (fromSite) return { body: fromSite, from: 'site' };
+		if ((text || '').length >= FULL_TEXT_MIN) return { body: text, from: 'feed' };
+		return null;
 	};
 
-	const run = async () => {
-		state.aiCtrl?.abort();
-		const ctrl = state.aiCtrl = new AbortController();
-		out.innerHTML = '';
+	const run = async ({ body: whole, from }, ctrl) => {
 		go.innerHTML = `${icon('stop', 17)} Interrompi`;
 		go.classList.add('stop');
 		const ui = progressUI(status, settings.ai.provider === 'webllm' ? "Modello pronto: leggo l'articolo" : `${local ? 'Il modello' : aiHost()} legge l'articolo`, 70);
 		try {
-			ui.say(`Leggo l'articolo da ${host || src.name}…`);
-			const full = await fetchArticle(item.u);
-			if (ctrl.signal.aborted) throw new DOMException('Annullato', 'AbortError');
 			const lim = AI.limitsFor(settings.ai);
-			const { text: body, clipped } = clip(full || text || item.d || '', lim.articleChars);
+			const { text: body, clipped } = clip(whole, lim.articleChars);
 			if (settings.ai.provider === 'webllm') ui.say('Preparo il modello…'); else ui.reading();
 			const res = await AI.complete(settings.ai, AI.SYSTEM, AI.tldrPrompt(item, src.name, body), (t) => {
 				ui.writing(t);
 				if (out.isConnected) out.innerHTML = AI.streamMarkdown(t);
 			}, ctrl.signal, (pr) => ui.loading(pr), lim.tldrTokens);
 			ui.done();
-			const k = clipped ? body.length : 0;
-			if (res) tldrCache.set(item.id, { t: res, f: !!full, k });
-			if (out.isConnected) show({ t: res, f: !!full, k });
+			const c = { t: res, s: from, k: clipped ? body.length : 0 };
+			if (res) tldrCache.set(item.id, c);
+			if (out.isConnected) show(c);
 		} catch (e) {
 			ui.done();
 			if (!out.isConnected) return;
@@ -648,18 +654,25 @@ function setupTldr(item, src, text) {
 	go.addEventListener('click', async () => {
 		if (go.classList.contains('stop')) { state.aiCtrl?.abort(); return; }
 		box.hidden = false;
-		const cached = tldrCache.get(item.id);
-		if (cached) {
-			status.innerHTML = '';
-			show(cached);
-		} else {
-			status.innerHTML = statusHTML('Controllo il modello…');
-			out.innerHTML = '';
-			const problem = await aiPrecheck();
-			if (problem) { status.innerHTML = ''; out.innerHTML = noticeHTML(problem); }
-			else run();
-		}
 		box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+		const cached = tldrCache.get(item.id);
+		if (cached && cached.s) { status.innerHTML = ''; show(cached); return; }
+		if (cached) tldrCache.del(item.id); // older summaries of an excerpt: not kept
+
+		state.aiCtrl?.abort();
+		const ctrl = state.aiCtrl = new AbortController();
+		out.innerHTML = '';
+		go.disabled = true;
+		status.innerHTML = statusHTML(`Leggo l'articolo da ${host || src.name}…`);
+		const source = await fullText();
+		go.disabled = false;
+		if (ctrl.signal.aborted || !out.isConnected) return;
+		if (!source) { status.innerHTML = ''; out.innerHTML = excerptOnly(); return; }
+		status.innerHTML = statusHTML('Controllo il modello…');
+		const problem = await aiPrecheck();
+		if (ctrl.signal.aborted || !out.isConnected) return;
+		if (problem) { status.innerHTML = ''; out.innerHTML = noticeHTML(problem); return; }
+		run(source, ctrl);
 	});
 	$('#tldr-close').addEventListener('click', () => {
 		state.aiCtrl?.abort();
