@@ -149,6 +149,16 @@ async function main() {
     for (const [id, why] of failed) console.log(`  - ${id}: ${why}`);
   }
   if (stale.length) console.log('Stale feeds:\n  ' + stale.join('\n  '));
+  // How many items carry the whole article in the feed (enough for a useful summary).
+  const fullBySource = {};
+  for (const it of items) {
+    const f = (fullBySource[it.s] ||= [0, 0]);
+    f[1]++;
+    if (it.c && (shards[parseInt(it.id[0], 16)][it.id] || '').length >= 1200) f[0]++;
+  }
+  const withFull = Object.entries(fullBySource).filter(([, [n]]) => n > 0).sort((a, b) => b[1][0] / b[1][1] - a[1][0] / a[1][1]);
+  console.log(`Sources with full text in the feed: ${withFull.length} of ${Object.keys(fullBySource).length}`);
+  console.log('  ' + withFull.map(([id, [n, t]]) => `${id} ${n}/${t}`).join(', '));
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
