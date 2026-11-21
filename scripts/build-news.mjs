@@ -138,17 +138,6 @@ async function main() {
   items.sort((a, b) => b.p - a.p);
   console.log(`Duplicates removed: ${before - items.length}`);
   await mkdir(join(OUT, 'content'), { recursive: true });
-  await writeFile(join(OUT, 'news.json'), JSON.stringify({ v: 1, at: now, status, items }));
-  await Promise.all(shards.map((s, i) => writeFile(join(OUT, 'content', `${i.toString(16)}.json`), JSON.stringify(s))));
-
-  const failed = Object.entries(status).filter(([, v]) => typeof v !== 'number' || v === 0);
-  const size = Buffer.byteLength(JSON.stringify({ items }));
-  console.log(`Sources: ${catalog.sources.length}, ok: ${catalog.sources.length - failed.length}, items: ${items.length}, news.json ≈ ${(size / 1024).toFixed(0)} KB`);
-  if (failed.length) {
-    console.log('Sources without fresh items:');
-    for (const [id, why] of failed) console.log(`  - ${id}: ${why}`);
-  }
-  if (stale.length) console.log('Stale feeds:\n  ' + stale.join('\n  '));
   // How many items carry the whole article in the feed (enough for a useful summary).
   const fullBySource = {};
   for (const it of items) {
@@ -159,6 +148,19 @@ async function main() {
   const withFull = Object.entries(fullBySource).filter(([, [n]]) => n > 0).sort((a, b) => b[1][0] / b[1][1] - a[1][0] / a[1][1]);
   console.log(`Sources with full text in the feed: ${withFull.length} of ${Object.keys(fullBySource).length}`);
   console.log('  ' + withFull.map(([id, [n, t]]) => `${id} ${n}/${t}`).join(', '));
+  // Share of each source's items whose whole text is in the feed: the app marks those sources.
+  const full = Object.fromEntries(Object.entries(fullBySource).filter(([, [n]]) => n > 0).map(([id, [n, t]]) => [id, Math.round((n / t) * 100) / 100]));
+  await writeFile(join(OUT, 'news.json'), JSON.stringify({ v: 1, at: now, status, full, items }));
+  await Promise.all(shards.map((s, i) => writeFile(join(OUT, 'content', `${i.toString(16)}.json`), JSON.stringify(s))));
+
+  const failed = Object.entries(status).filter(([, v]) => typeof v !== 'number' || v === 0);
+  const size = Buffer.byteLength(JSON.stringify({ items }));
+  console.log(`Sources: ${catalog.sources.length}, ok: ${catalog.sources.length - failed.length}, items: ${items.length}, news.json ≈ ${(size / 1024).toFixed(0)} KB`);
+  if (failed.length) {
+    console.log('Sources without fresh items:');
+    for (const [id, why] of failed) console.log(`  - ${id}: ${why}`);
+  }
+  if (stale.length) console.log('Stale feeds:\n  ' + stale.join('\n  '));
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

@@ -1450,3 +1450,7 @@ kbd {
 
 .ai-source { display: flex; gap: 0.4rem; align-items: flex-start; line-height: 1.45; }
 .ai-source .ic { margin-top: 0.1rem; flex: none; }
+
+.row small.full { color: var(--accent); white-space: nowrap; }
+.row small.full .ic { display: inline; vertical-align: -1px; }
+.help .ic { display: inline; vertical-align: -1px; }

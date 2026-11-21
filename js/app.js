@@ -504,7 +504,11 @@ async function renderArticle(id) {
 		body.insertAdjacentHTML('beforeend', `<p class="note">${item.d ? 'La fonte pubblica solo questo estratto.' : 'La fonte non pubblica un estratto.'} L'articolo completo è sul sito.</p>`);
 	}
 
-	if (ai) setupTldr(item, s, text);
+	// Summaries need the whole text: from the feed, or from the site through the reader's proxy.
+	// Most sites do not let a browser read their pages directly, so without either, no button.
+	const tldrGo = $('#tldr-go');
+	if (ai && (text || '').length < FULL_TEXT_MIN && !settings.proxy.trim()) tldrGo?.remove();
+	else if (ai) setupTldr(item, s, text);
 }
 
 function progressText(p) {
@@ -861,6 +865,7 @@ function renderSources() {
 		<section class="page">
 			<h1>Le tue <em>fonti</em></h1>
 			<p class="lede">${state.catalog.sources.length} fonti italiane e internazionali divise per argomento. La scelta resta salvata solo su questo dispositivo: Edicola scarica sempre tutte le notizie insieme, quindi nessuno sa cosa leggi.</p>
+			<p class="help" style="margin-top:-1rem">${icon('sparkle', 12)} <strong>testo completo</strong>: il feed contiene gli articoli interi, che Edicola può riassumere con l'intelligenza artificiale. Le altre fonti pubblicano solo un estratto.</p>
 			<div class="subtools" style="margin-bottom:1rem">
 				<div class="seg" role="group" aria-label="Lingua">
 					${[['all', 'Tutte'], ['it', 'Italiane'], ['en', 'Inglesi']].map(([k, l]) => `<button data-lang="${k}" aria-pressed="${srcLang === k}">${l}</button>`).join('')}
@@ -880,7 +885,8 @@ function renderSources() {
 						<label class="row toggle-all"><input type="checkbox" data-all="${c.id}" ${n === list.length ? 'checked' : ''}><span class="grow">Seleziona tutte</span></label>
 						${list.map((s) => {
 							const st = sourceStatus(s.id);
-							return `<label class="row"><input type="checkbox" data-id="${s.id}" ${sel.has(s.id) ? 'checked' : ''}><span class="grow">${esc(s.name)}<small>${s.lang.toUpperCase()}</small>${st ? `<small class="warn">${esc(st)}</small>` : ''}</span></label>`;
+							const full = (state.news?.full?.[s.id] || 0) >= 0.5;
+							return `<label class="row"><input type="checkbox" data-id="${s.id}" ${sel.has(s.id) ? 'checked' : ''}><span class="grow">${esc(s.name)}<small>${s.lang.toUpperCase()}</small>${full ? `<small class="full" title="Il feed contiene gli articoli interi: si possono riassumere">${icon('sparkle', 12)} testo completo</small>` : ''}${st ? `<small class="warn">${esc(st)}</small>` : ''}</span></label>`;
 						}).join('')}
 					</div>
 				</details>`;
