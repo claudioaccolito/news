@@ -868,7 +868,7 @@ function renderSources() {
 		<section class="page">
 			<h1>Le tue <em>fonti</em></h1>
 			<p class="lede">${state.catalog.sources.length} fonti italiane e internazionali divise per argomento. La scelta resta salvata solo su questo dispositivo: Edicola scarica sempre tutte le notizie insieme, quindi nessuno sa cosa leggi.</p>
-			<p class="help" style="margin-top:-1rem">${icon('sparkle', 12)} <strong>testo completo</strong>: il feed contiene gli articoli interi, che Edicola può riassumere con l'intelligenza artificiale. Le altre fonti pubblicano solo un estratto.</p>
+			<p class="help" style="margin-top:-1rem">${icon('sparkle', 12)} <strong>riassumibile</strong>: Edicola può riassumerne gli articoli con l'intelligenza artificiale.</p>
 			<div class="subtools" style="margin-bottom:1rem">
 				<div class="seg" role="group" aria-label="Lingua">
 					${[['all', 'Tutte'], ['it', 'Italiane'], ['en', 'Inglesi']].map(([k, l]) => `<button data-lang="${k}" aria-pressed="${srcLang === k}">${l}</button>`).join('')}
@@ -889,7 +889,7 @@ function renderSources() {
 						${list.map((s) => {
 							const st = sourceStatus(s.id);
 							const full = (state.news?.full?.[s.id] || 0) >= 0.5;
-							return `<label class="row"><input type="checkbox" data-id="${s.id}" ${sel.has(s.id) ? 'checked' : ''}><span class="grow">${esc(s.name)}<small>${s.lang.toUpperCase()}</small>${full ? `<small class="full" title="Il feed contiene gli articoli interi: si possono riassumere">${icon('sparkle', 12)} testo completo</small>` : ''}${st ? `<small class="warn">${esc(st)}</small>` : ''}</span></label>`;
+							return `<label class="row"><input type="checkbox" data-id="${s.id}" ${sel.has(s.id) ? 'checked' : ''}><span class="grow">${esc(s.name)}<small>${s.lang.toUpperCase()}</small>${full ? `<small class="full" title="Edicola può riassumere i suoi articoli">${icon('sparkle', 12)} riassumibile</small>` : ''}${st ? `<small class="warn">${esc(st)}</small>` : ''}</span></label>`;
 						}).join('')}
 					</div>
 				</details>`;
