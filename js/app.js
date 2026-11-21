@@ -475,15 +475,15 @@ async function renderArticle(id) {
 			<div class="article-actions">
 				<a class="btn primary wide" href="${esc(item.u)}" target="_blank" rel="noopener noreferrer">Leggi su ${esc(host || s.name)} ${icon('external', 16)}</a>
 				<div class="btn-row">
-					${ai ? `<button class="btn" id="tldr-go">${icon('sparkle', 17)} Riassumi</button>` : ''}
+					<button class="btn" id="tldr-go" hidden>${icon('sparkle', 17)} Riassumi</button>
 					<button class="btn" id="share">${icon('share', 17)} ${navigator.share ? 'Condividi' : 'Copia link'}</button>
 				</div>
 			</div>
-			${ai ? `<section class="ai-box" id="tldr" hidden>
+			<section class="ai-box" id="tldr" hidden>
 				<div class="label"><span>${icon('sparkle', 15)} Riassunto</span><button class="icon-btn" id="tldr-close" aria-label="Chiudi il riassunto">${icon('close', 16)}</button></div>
 				<div id="tldr-status"></div>
 				<div class="ai-out" id="tldr-out"></div>
-			</section>` : ''}
+			</section>
 		</article>`;
 
 	$('#back').addEventListener('click', () => {
@@ -509,9 +509,19 @@ async function renderArticle(id) {
 
 	// Summaries need the whole text: from the feed, or from the site through the reader's proxy.
 	// Most sites do not let a browser read their pages directly, so without either, no button.
+	// The button appears whenever the article can be summarized, AI on or off: with the AI
+	// off it explains how to turn it on, so the feature is never invisible.
 	const tldrGo = $('#tldr-go');
-	if (ai && proseLength(text) < FULL_TEXT_MIN && !settings.proxy.trim()) tldrGo?.remove();
-	else if (ai) setupTldr(item, s, text);
+	if (!tldrGo) return;
+	if (proseLength(text) < FULL_TEXT_MIN && !settings.proxy.trim()) { tldrGo.remove(); return; }
+	tldrGo.hidden = false;
+	if (ai) { setupTldr(item, s, text); return; }
+	tldrGo.addEventListener('click', () => {
+		$('#tldr').hidden = false;
+		$('#tldr-out').innerHTML = noticeHTML({ title: "Attiva l'intelligenza artificiale", text: 'Per riassumere gli articoli scegli nelle impostazioni dove far girare il modello: nel telefono, sul tuo computer o con un servizio online.' });
+		$('#tldr').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+	});
+	$('#tldr-close').addEventListener('click', () => { $('#tldr').hidden = true; });
 }
 
 function progressText(p) {
